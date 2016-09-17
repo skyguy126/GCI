@@ -3,3 +3,4 @@ tests
 .classpath
 .project
 libs
+/src/com/skyguy126/gci/Tester.java
