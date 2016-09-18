@@ -2,5 +2,5 @@ bin
 tests
 .classpath
 .project
-libs
+lib
 /src/com/skyguy126/gci/Tester.java
