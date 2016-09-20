@@ -1,7 +1,6 @@
 package com.skyguy126.gci;
 
 import org.pmw.tinylog.Configurator;
-import org.pmw.tinylog.Level;
 import org.pmw.tinylog.Logger;
 
 import java.io.BufferedReader;
@@ -22,13 +21,14 @@ public class Parser {
 
 	public Parser(String filePath) {
 
-		Configurator.defaultConfig().formatPattern("{date} - {level}: {message}").level(Level.DEBUG).activate();
+		Configurator.defaultConfig().formatPattern(Shared.LOG_FORMAT).level(Shared.LOG_LEVEL).activate();
 
-		Logger.debug("Parser logger initiated");
+		Logger.debug("Parser initiated");
 
 		try {
 			this.fileReader = new BufferedReader(new InputStreamReader(new FileInputStream(filePath), "UTF-8"));
 			Logger.debug("Loaded file input");
+			this.gCodeArray = new ArrayList<ArrayList<String>>();
 		} catch (IOException e) {
 			Logger.error(e);
 		}
@@ -81,12 +81,15 @@ public class Parser {
 				// we want to check the rest of the file
 				boolean loopExit = false;
 
-				// Keep track of cmds that need arguments
-				String lastCmd = "";
+				// We don't want duplicate x/y/z coordinates
+				boolean xExists = false;
+				boolean yExists = false;
+				boolean zExists = false;
+				boolean iExists = false;
+				boolean jExists = false;
 
-				// This is especially necessary for move commands, do not accept
-				// blank move commands
-				boolean argsMet = false;
+				// Keep track of commands that need arguments
+				String lastCmd = "";
 
 				// Keep track of the command block number
 				int cmdNum = -1;
@@ -127,7 +130,7 @@ public class Parser {
 					// spindle speed
 					if (lastCmdExists && lastCmd.equals("M03")) {
 						if (Pattern.compile("[S]\\d+").matcher(x).matches()) {
-							Logger.debug("Found S value");
+							Logger.debug("Found S value: {}", x);
 							cmdList.add(x);
 							lastCmdExists = false;
 							lastCmd = "";
@@ -139,33 +142,61 @@ public class Parser {
 						}
 					}
 
-					if (lastCmdExists && lastCmd.equals("G00")) {
-						Logger.debug("Found G00 as last cmd");
+					if (lastCmdExists && (lastCmd.equals("G00") || lastCmd.equals("G01") || lastCmd.equals("G02")
+							|| lastCmd.equals("G03"))) {
 
-						// Search for X Y Z and F tags following G00
-						if (Pattern.compile("[X]\\d+([.]\\d+)").matcher(x).matches()) {
-							Logger.debug("Detected x val");
+						// Search for X Y Z and F tags following G00 and G01
+
+						if (Pattern.compile("[XYZ]([-])?\\d+([.]\\d+)?").matcher(x).matches()) {
+							
+							Logger.debug("Detected coordinate value: {}", x);
+
+							// Make sure coordinate can only be defined once on
+							// one line
+							if (!xExists && x.startsWith("X")) {
+								xExists = true;
+							} else if (!yExists && x.startsWith("Y")) {
+								yExists = true;
+							} else if (!zExists && x.startsWith("Z")) {
+								zExists = true;
+							} else {
+								Logger.error("X Y or Z can only be defined once on line {}", lineNum);
+								valid = false;
+								break;
+							}
+
 							cmdList.add(x);
-							argsMet = true;
 							continue;
-						} else if (Pattern.compile("[Y]\\d+([.]\\d+)").matcher(x).matches()) {
-							Logger.debug("Detected y val");
+							
+						} else if (Pattern.compile("[IJ]([-])?\\d+([.]\\d+)?").matcher(x).matches()) {
+							
+							Logger.debug("Detected coordinate value for arc: {}", x);
+
+							if (!iExists && x.startsWith("I")) {
+								iExists = true;
+							} else if (!jExists && x.startsWith("J")) {
+								jExists = true;
+							} else {
+								Logger.error("I or J can only be defined once on line {}", lineNum);
+								valid = false;
+								break;
+							}
+
 							cmdList.add(x);
-							argsMet = true;
 							continue;
-						} else if (Pattern.compile("[Z]\\d+([.]\\d+)").matcher(x).matches()) {
-							Logger.debug("Detected z val");
-							cmdList.add(x);
-							argsMet = true;
-							continue;
+
 						} else if (Pattern.compile("[F]\\d+").matcher(x).matches()) {
-							Logger.debug("Detected f val");
+							
+							Logger.debug("Detected F value: {}", x);
 							cmdList.add(x);
 							continue;
-						} else if (!argsMet) {
-							Logger.error("G00 must be supplied with X Y or Z tag on line {}", lineNum);
+							
+						} else {
+							
+							Logger.error("Syntax error on line {}", lineNum);
 							valid = false;
 							break;
+							
 						}
 					}
 
@@ -184,12 +215,7 @@ public class Parser {
 					case "M11":
 					case "M30":
 					case "M47":
-						break;
-					case "M03":
-						Logger.debug("Set last cmd to M03");
-						cmdList.add(x);
-						lastCmdExists = true;
-						lastCmd = x;
+					case "M02":
 						break;
 					case "G20":
 						if (measurementMode == null) {
@@ -204,7 +230,7 @@ public class Parser {
 					case "G21":
 						if (measurementMode == null) {
 							measurementMode = MeasurementMode.MILLIMETER;
-							Logger.debug("Measurement mode: mm");
+							Logger.debug("Measurement mode: millimeter");
 						} else {
 							Logger.error("Measurement mode can only be defined once");
 							valid = false;
@@ -231,8 +257,14 @@ public class Parser {
 							loopExit = true;
 						}
 						break;
+					case "M05":
+						cmdList.add(x);
+						break;
+					case "M03":
 					case "G00":
-						Logger.debug("Set last cmd to G00");
+					case "G01":
+					case "G02":
+					case "G03":
 						cmdList.add(x);
 						lastCmdExists = true;
 						lastCmd = x;
@@ -244,22 +276,62 @@ public class Parser {
 						break;
 					}
 
+					// Exit loop if 1 command block on a line is invalid
 					if (loopExit) {
 						break;
 					}
 
 				}
 
-				System.out.println(cmdList);
+				// Make sure X Y or Z tag was given for G00 and G01
+				if (lastCmdExists && (lastCmd.equals("G00") || lastCmd.equals("G01"))) {
+					if (!(xExists || yExists || zExists) || (iExists || jExists)) {
+						Logger.error("{} must be supplied with X Y or Z tag on line {}", lastCmd, lineNum);
+						valid = false;
+					}
+				}
 
+				// Make sure I and J tag was given for G02 and G03
+				if (lastCmdExists && (lastCmd.equals("G02") || lastCmd.equals("G03"))) {
+					if (zExists || !(iExists && jExists)) {
+						Logger.error("{} must be supplied with I and J tag on line {}", lastCmd, lineNum);
+						valid = false;
+					}
+				}
+
+				// Add current line to main gcode array if command is valid
+				if (valid && !cmdList.isEmpty()) {
+					Logger.debug("Command list for line {}: {}", lineNum, cmdList.toString());
+					gCodeArray.add(cmdList);
+				}
 			}
 
 			this.fileReader.close();
+
+			if (coordinateMode == null) {
+				Logger.error("Coordinate mode not defined!");
+				valid = false;
+			}
+
+			if (measurementMode == null) {
+				Logger.error("Measurement mode not defined!");
+				valid = false;
+			}
 
 			if (valid)
 				Logger.info("Parse success!");
 			else
 				Logger.error("Parse failed!");
+
+			if (Shared.DEBUG_MODE) {
+				System.out.println("\n\nCODE ARRAY\n");
+
+				for (ArrayList<String> line : gCodeArray) {
+					Logger.debug("----- {} -----", line.toString());
+				}
+
+				System.out.println("\n\n\n");
+			}
 
 			return valid;
 		} catch (IOException e) {
