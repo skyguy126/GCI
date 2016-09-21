@@ -106,7 +106,7 @@ public class Parser {
 					if (cmdNum == 0 && !Pattern.compile("[N]\\d+").matcher(x).matches()) {
 						Logger.error("Invalid N tag at line {}", lineNum);
 						valid = false;
-						loopExit = true;
+						break;
 					} else if (cmdNum == 1) {
 						// Command following N tag MUST be G or M
 
@@ -117,7 +117,7 @@ public class Parser {
 							Logger.error("Syntax error on line {}. N tag must be followed by a proper G or M tag",
 									lineNum);
 							valid = false;
-							loopExit = true;
+							break;
 						}
 					}
 
