@@ -1,6 +1,10 @@
 package com.skyguy126.gci;
 
 import java.awt.Frame;
+import javax.swing.JFileChooser;
+import javax.swing.JOptionPane;
+
+import java.io.File;
 import java.awt.Menu;
 import java.awt.MenuBar;
 import java.awt.MenuItem;
@@ -21,6 +25,7 @@ import com.jogamp.opengl.awt.GLCanvas;
 import com.jogamp.opengl.glu.GLU;
 import com.jogamp.opengl.util.Animator;
 
+
 public class RenderUI implements WindowListener, GLEventListener {
 	
 	private Frame frame;
@@ -29,7 +34,8 @@ public class RenderUI implements WindowListener, GLEventListener {
 	private GLCapabilities glcaps;
 	private GLCanvas glcanvas;
 	private Animator animator;
-
+	
+	
 	public RenderUI() {
 		Configurator.defaultConfig().formatPattern(Shared.LOG_FORMAT).level(Shared.LOG_LEVEL).activate();
 
@@ -60,6 +66,30 @@ public class RenderUI implements WindowListener, GLEventListener {
 			}
 		});
 		
+		MenuItem openMenuItem = new MenuItem("Open");
+		openMenuItem.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				JFileChooser fileChooser = new JFileChooser();
+				fileChooser.showOpenDialog(frame.getOwner());
+				File fileName = fileChooser.getSelectedFile();
+				if(fileName != null) {
+					String filePath = fileName.getAbsolutePath();
+					int periodIndex = filePath.lastIndexOf(".");
+					String fileExtension = filePath.substring(periodIndex);
+					if(fileExtension.equals(".nc")){
+						Logger.debug("Success");
+					}
+					else{
+						JOptionPane.showMessageDialog(frame,  "Invalid File Type");
+					}
+				}
+				
+				
+			}
+		});
+		
+		file.add(openMenuItem);
 		file.add(exitMenuItem);
 		menuBar.add(file);
 		
