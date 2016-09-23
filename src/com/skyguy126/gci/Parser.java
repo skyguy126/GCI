@@ -33,6 +33,10 @@ public class Parser {
 			Logger.error(e);
 		}
 	}
+	
+	public ArrayList<ArrayList<String>> getGCodeArray() {
+		return this.gCodeArray;
+	}
 
 	public boolean parse() {
 

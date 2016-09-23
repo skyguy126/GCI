@@ -10,6 +10,8 @@ import java.awt.MenuBar;
 import java.awt.MenuItem;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.awt.event.MouseWheelEvent;
+import java.awt.event.MouseWheelListener;
 import java.awt.event.WindowEvent;
 import java.awt.event.WindowListener;
 
@@ -25,39 +27,41 @@ import com.jogamp.opengl.awt.GLCanvas;
 import com.jogamp.opengl.glu.GLU;
 import com.jogamp.opengl.util.Animator;
 
+public class RenderUI implements WindowListener, GLEventListener, MouseWheelListener {
 
-public class RenderUI implements WindowListener, GLEventListener {
-	
 	private Frame frame;
 	private MenuBar menuBar;
-	
+
 	private GLCapabilities glcaps;
 	private GLCanvas glcanvas;
 	private Animator animator;
+	private GLU glu;
 	
-	
+	private volatile int zoomDistance;
+
 	public RenderUI() {
 		Configurator.defaultConfig().formatPattern(Shared.LOG_FORMAT).level(Shared.LOG_LEVEL).activate();
 
 		Logger.debug("RenderUI initiated");
-        
-        glcaps = new GLCapabilities(GLProfile.get(GLProfile.GL2));
+
+		glcaps = new GLCapabilities(GLProfile.get(GLProfile.GL2));
 		glcaps.setDoubleBuffered(true);
 		glcaps.setHardwareAccelerated(true);
-		
+
 		glcanvas = new GLCanvas(glcaps);
 		glcanvas.addGLEventListener(this);
 		glcanvas.setSize(720, 720);
-		
+		glcanvas.addMouseWheelListener(this);
+
 		frame = new Frame("GCODE Interpreter - " + Shared.VERSION);
-        frame.setSize(800, 800);
-        frame.setResizable(true);
-        frame.addWindowListener(this);        
+		frame.setSize(800, 800);
+		frame.setResizable(false);
+		frame.addWindowListener(this);
 		frame.add(glcanvas);
-		
+
 		menuBar = new MenuBar();
-		
 		Menu file = new Menu("File");
+		
 		MenuItem exitMenuItem = new MenuItem("Exit");
 		exitMenuItem.addActionListener(new ActionListener() {
 			@Override
@@ -65,72 +69,84 @@ public class RenderUI implements WindowListener, GLEventListener {
 				exit();
 			}
 		});
-		
+
 		MenuItem openMenuItem = new MenuItem("Open");
 		openMenuItem.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
+
 				JFileChooser fileChooser = new JFileChooser();
 				fileChooser.showOpenDialog(frame.getOwner());
-				File fileName = fileChooser.getSelectedFile();
-				if(fileName != null) {
-					String filePath = fileName.getAbsolutePath();
-					int periodIndex = filePath.lastIndexOf(".");
-					String fileExtension = filePath.substring(periodIndex);
-					if(fileExtension.equals(".nc")){
+				File file = fileChooser.getSelectedFile();
+				if (file != null) {
+
+					String fileExtension = "";
+					String filePath = file.getAbsolutePath();
+					int extensionIndex = filePath.lastIndexOf(".");
+
+					if (extensionIndex != -1)
+						fileExtension = filePath.substring(extensionIndex);
+
+					if (fileExtension.equals(".nc") || fileExtension.equals(".txt")) {
 						Logger.debug("Success");
+					} else {
+						Logger.warn("Invalid file type {}", fileExtension);
+						JOptionPane.showMessageDialog(frame, "File must be of extenstion *.nc", "Invalid File Type",
+								JOptionPane.WARNING_MESSAGE);
 					}
-					else{
-						JOptionPane.showMessageDialog(frame,  "Invalid File Type");
-					}
+
 				}
-				
-				
 			}
 		});
-		
+
 		file.add(openMenuItem);
 		file.add(exitMenuItem);
 		menuBar.add(file);
+
+		this.zoomDistance = 100;
 		
 		frame.setMenuBar(menuBar);
 		frame.setVisible(true);
 	}
-	
+
 	@Override
 	public void display(GLAutoDrawable glad) {
 		GL2 gl = glad.getGL().getGL2();
+
+		gl.glClear(GL2.GL_COLOR_BUFFER_BIT | GL2.GL_DEPTH_BUFFER_BIT);		
 		
-		gl.glClear(GL2.GL_COLOR_BUFFER_BIT | GL2.GL_DEPTH_BUFFER_BIT);
+		setCamera(gl, glu, zoomDistance);
+		
 		gl.glColor3f(0.9f, 0.5f, 0.2f);
-        gl.glBegin(GL2.GL_TRIANGLE_FAN);
-        gl.glVertex3f(-20, -20, 0);
-        gl.glVertex3f(+20, -20, 0);
-        gl.glVertex3f(0, 20, 0);
-        gl.glEnd();
+		gl.glBegin(GL2.GL_TRIANGLE_FAN);	
+		
+		gl.glVertex3f(-20, -20, 0);
+		gl.glVertex3f(+20, -20, 0);
+		gl.glVertex3f(0, 20, 0);
+		gl.glEnd();
 	}
 
 	@Override
 	public void dispose(GLAutoDrawable glad) {
 		// TODO Auto-generated method stub
-		
+
 	}
 
 	@Override
 	public void init(GLAutoDrawable glad) {
 		Logger.debug("OpenGL init");
-		
+
 		GL2 gl = glad.getGL().getGL2();
-		GLU glu = new GLU();
-		
+		glu = new GLU();
+
 		gl.glEnable(GL2.GL_DEPTH_TEST);
 		gl.glDepthFunc(GL2.GL_LEQUAL);
 		gl.glShadeModel(GL2.GL_SMOOTH);
 		gl.glHint(GL2.GL_PERSPECTIVE_CORRECTION_HINT, GL2.GL_NICEST);
 		gl.glClearColor(0f, 0f, 0f, 1f);
-		
+
 		setCamera(gl, glu, 100);
-		
+
 		animator = new Animator(glcanvas);
 		animator.start();
 	}
@@ -139,22 +155,22 @@ public class RenderUI implements WindowListener, GLEventListener {
 	public void reshape(GLAutoDrawable glad, int x, int y, int width, int height) {
 		GL2 gl = glad.getGL().getGL2();
 		gl.glViewport(x, y, width, height);
-		
+
 		Logger.debug("GL reshape");
 	}
-	
+
 	public void setCamera(GL2 gl, GLU glu, float distance) {
 		gl.glMatrixMode(GL2.GL_PROJECTION);
 		gl.glLoadIdentity();
-		
+
 		float widthHeightRatio = (float) glcanvas.getWidth() / (float) glcanvas.getHeight();
 		glu.gluPerspective(45, widthHeightRatio, 1, 1000);
 		glu.gluLookAt(0, 0, distance, 0, 0, 0, 0, 1, 0);
-		
+
 		gl.glMatrixMode(GL2.GL_MODELVIEW);
 		gl.glLoadIdentity();
 	}
-	
+
 	public void exit() {
 		Logger.debug("Window closing...");
 		animator.stop();
@@ -166,13 +182,13 @@ public class RenderUI implements WindowListener, GLEventListener {
 	@Override
 	public void windowActivated(WindowEvent evt) {
 		// TODO Auto-generated method stub
-		
+
 	}
 
 	@Override
 	public void windowClosed(WindowEvent evt) {
 		// TODO Auto-generated method stub
-		
+
 	}
 
 	@Override
@@ -183,27 +199,45 @@ public class RenderUI implements WindowListener, GLEventListener {
 	@Override
 	public void windowDeactivated(WindowEvent evt) {
 		// TODO Auto-generated method stub
-		
+
 	}
 
 	@Override
 	public void windowDeiconified(WindowEvent evt) {
 		// TODO Auto-generated method stub
-		
+
 	}
 
 	@Override
 	public void windowIconified(WindowEvent evt) {
 		// TODO Auto-generated method stub
-		
+
 	}
 
 	@Override
 	public void windowOpened(WindowEvent evt) {
 		// TODO Auto-generated method stub
-		
+
 	}
 	
+	@Override
+	public void mouseWheelMoved(MouseWheelEvent e) {
+
+		if (e.getWheelRotation() == -1) {
+			if (this.zoomDistance > 50)
+				this.zoomDistance -= 10;
+			else
+				this.zoomDistance = 50;
+		} else {
+			if (this.zoomDistance < 950)
+				this.zoomDistance += 10;
+			else
+				this.zoomDistance = 950;
+		}
+		
+		Logger.debug("Mouse wheel pos {}", this.zoomDistance);
+	}
+
 	public static void main(String[] args) {
 		RenderUI gui = new RenderUI();
 	}
