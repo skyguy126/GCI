@@ -3,6 +3,7 @@ package com.skyguy126.gci;
 import java.awt.Frame;
 import javax.swing.JFileChooser;
 import javax.swing.JOptionPane;
+import javax.swing.SwingUtilities;
 
 import java.io.File;
 import java.awt.Menu;
@@ -10,6 +11,9 @@ import java.awt.MenuBar;
 import java.awt.MenuItem;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.awt.event.MouseEvent;
+import java.awt.event.MouseListener;
+import java.awt.event.MouseMotionListener;
 import java.awt.event.MouseWheelEvent;
 import java.awt.event.MouseWheelListener;
 import java.awt.event.WindowEvent;
@@ -27,7 +31,8 @@ import com.jogamp.opengl.awt.GLCanvas;
 import com.jogamp.opengl.glu.GLU;
 import com.jogamp.opengl.util.Animator;
 
-public class RenderUI implements WindowListener, GLEventListener, MouseWheelListener {
+public class RenderUI
+		implements WindowListener, GLEventListener, MouseWheelListener, MouseMotionListener, MouseListener {
 
 	private Frame frame;
 	private MenuBar menuBar;
@@ -36,8 +41,12 @@ public class RenderUI implements WindowListener, GLEventListener, MouseWheelList
 	private GLCanvas glcanvas;
 	private Animator animator;
 	private GLU glu;
-	
+
 	private volatile int zoomDistance;
+	private volatile int lastX;
+	private volatile int lastY;
+	private volatile int curX;
+	private volatile int curY;
 
 	public RenderUI() {
 		Configurator.defaultConfig().formatPattern(Shared.LOG_FORMAT).level(Shared.LOG_LEVEL).activate();
@@ -49,9 +58,11 @@ public class RenderUI implements WindowListener, GLEventListener, MouseWheelList
 		glcaps.setHardwareAccelerated(true);
 
 		glcanvas = new GLCanvas(glcaps);
-		glcanvas.addGLEventListener(this);
 		glcanvas.setSize(720, 720);
+		glcanvas.addMouseListener(this);
+		glcanvas.addGLEventListener(this);
 		glcanvas.addMouseWheelListener(this);
+		glcanvas.addMouseMotionListener(this);
 
 		frame = new Frame("GCODE Interpreter - " + Shared.VERSION);
 		frame.setSize(800, 800);
@@ -61,7 +72,7 @@ public class RenderUI implements WindowListener, GLEventListener, MouseWheelList
 
 		menuBar = new MenuBar();
 		Menu file = new Menu("File");
-		
+
 		MenuItem exitMenuItem = new MenuItem("Exit");
 		exitMenuItem.addActionListener(new ActionListener() {
 			@Override
@@ -104,7 +115,7 @@ public class RenderUI implements WindowListener, GLEventListener, MouseWheelList
 		menuBar.add(file);
 
 		this.zoomDistance = 100;
-		
+
 		frame.setMenuBar(menuBar);
 		frame.setVisible(true);
 	}
@@ -113,13 +124,14 @@ public class RenderUI implements WindowListener, GLEventListener, MouseWheelList
 	public void display(GLAutoDrawable glad) {
 		GL2 gl = glad.getGL().getGL2();
 
-		gl.glClear(GL2.GL_COLOR_BUFFER_BIT | GL2.GL_DEPTH_BUFFER_BIT);		
-		
+		gl.glClear(GL2.GL_COLOR_BUFFER_BIT | GL2.GL_DEPTH_BUFFER_BIT);
+
 		setCamera(gl, glu, zoomDistance);
-		
+		gl.glTranslated(curX/100.0, curY/-100.0, 0);
+
 		gl.glColor3f(0.9f, 0.5f, 0.2f);
-		gl.glBegin(GL2.GL_TRIANGLE_FAN);	
-		
+		gl.glBegin(GL2.GL_TRIANGLE_FAN);
+
 		gl.glVertex3f(-20, -20, 0);
 		gl.glVertex3f(+20, -20, 0);
 		gl.glVertex3f(0, 20, 0);
@@ -144,8 +156,9 @@ public class RenderUI implements WindowListener, GLEventListener, MouseWheelList
 		gl.glShadeModel(GL2.GL_SMOOTH);
 		gl.glHint(GL2.GL_PERSPECTIVE_CORRECTION_HINT, GL2.GL_NICEST);
 		gl.glClearColor(0f, 0f, 0f, 1f);
+		gl.setSwapInterval(1);
 
-		setCamera(gl, glu, 100);
+		setCamera(gl, glu, zoomDistance);
 
 		animator = new Animator(glcanvas);
 		animator.start();
@@ -173,10 +186,94 @@ public class RenderUI implements WindowListener, GLEventListener, MouseWheelList
 
 	public void exit() {
 		Logger.debug("Window closing...");
-		animator.stop();
+
+		if (animator != null)
+			animator.stop();
+
 		frame.remove(glcanvas);
 		frame.dispose();
 		System.exit(0);
+	}
+
+	@Override
+	public void mouseWheelMoved(MouseWheelEvent e) {
+
+		if (e.getWheelRotation() == -1) {
+			if (this.zoomDistance > 50)
+				this.zoomDistance -= 10;
+			else
+				this.zoomDistance = 50;
+		} else {
+			if (this.zoomDistance < 300)
+				this.zoomDistance += 10;
+			else
+				this.zoomDistance = 300;
+		}
+
+		Logger.debug("Mouse wheel pos {}", this.zoomDistance);
+	}
+
+	@Override
+	public void mouseDragged(MouseEvent e) {
+		if (SwingUtilities.isMiddleMouseButton(e)) {
+			
+			int dx = (e.getX() - lastX) * Shared.SENSITIVITY_MULTIPLIER;
+			int dy = (e.getY() - lastY) * Shared.SENSITIVITY_MULTIPLIER;
+			
+			lastX = e.getX();
+			lastY = e.getY();
+			
+			curX += dx;
+			curY += dy;
+			
+			Logger.debug("Drag - dX: {} dY: {}", dx, dy);
+		}
+	}
+	
+	@Override
+	public void mousePressed(MouseEvent e) {
+		if (SwingUtilities.isMiddleMouseButton(e)) {
+			Logger.debug("Drag started");
+			
+			lastX = e.getX();
+			lastY = e.getY();
+		}
+	}
+
+	@Override
+	public void mouseReleased(MouseEvent e) {
+		if (SwingUtilities.isMiddleMouseButton(e)) {
+			Logger.debug("Drag ended");
+		}
+	}
+	
+	@Override
+	public void windowClosing(WindowEvent evt) {
+		exit();
+	}
+	
+	@Override
+	public void mouseClicked(MouseEvent arg0) {
+		// TODO Auto-generated method stub
+		
+	}
+
+	@Override
+	public void mouseEntered(MouseEvent arg0) {
+		// TODO Auto-generated method stub
+		
+	}
+
+	@Override
+	public void mouseExited(MouseEvent arg0) {
+		// TODO Auto-generated method stub
+		
+	}
+
+	@Override
+	public void mouseMoved(MouseEvent e) {
+		// TODO Auto-generated method stub
+
 	}
 
 	@Override
@@ -189,11 +286,6 @@ public class RenderUI implements WindowListener, GLEventListener, MouseWheelList
 	public void windowClosed(WindowEvent evt) {
 		// TODO Auto-generated method stub
 
-	}
-
-	@Override
-	public void windowClosing(WindowEvent evt) {
-		exit();
 	}
 
 	@Override
@@ -219,26 +311,9 @@ public class RenderUI implements WindowListener, GLEventListener, MouseWheelList
 		// TODO Auto-generated method stub
 
 	}
-	
-	@Override
-	public void mouseWheelMoved(MouseWheelEvent e) {
-
-		if (e.getWheelRotation() == -1) {
-			if (this.zoomDistance > 50)
-				this.zoomDistance -= 10;
-			else
-				this.zoomDistance = 50;
-		} else {
-			if (this.zoomDistance < 950)
-				this.zoomDistance += 10;
-			else
-				this.zoomDistance = 950;
-		}
-		
-		Logger.debug("Mouse wheel pos {}", this.zoomDistance);
-	}
 
 	public static void main(String[] args) {
 		RenderUI gui = new RenderUI();
 	}
+
 }
