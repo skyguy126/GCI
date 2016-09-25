@@ -14,4 +14,6 @@ public class Shared {
 	public static double PAN_SENSITIVITY_MULTIPLIER = 10.0;
 	public static double ZOOM_SENSITIVITY_MULTIPLIER = 10.0;
 	public static double ROTATE_SENSITIVITY_MULTIPLIER = 10.0;
+	
+	public static final double DECREASE_SENSITIVITY_MULTIPLIER = 2.5;
 }

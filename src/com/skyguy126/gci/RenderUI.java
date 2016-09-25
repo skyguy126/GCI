@@ -37,6 +37,7 @@ import com.jogamp.opengl.util.Animator;
 
 // TODO
 // Add key press detector to lock movement to certain axis
+// Add key press detector to decrease sensitivity multipliers
 // Add console writer to log in JFrame
 // Add method to reset camera position
 // Add settings to change mouse sensitivity
@@ -63,11 +64,15 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	private volatile double curAngleX;
 	private volatile double curAngleY;
 
+	private volatile boolean lockHorizAxis;
+	private volatile boolean lockVertAxis;
+	private volatile boolean decreaseSensitivity;
+
 	public RenderUI() {
 		Configurator.defaultConfig().formatPattern(Shared.LOG_FORMAT).level(Shared.LOG_LEVEL).activate();
 
 		Logger.debug("RenderUI initiated");
-		
+
 		assert Shared.PAN_SENSITIVITY_MULTIPLIER > 0 : "Pan sensitivity must be greater than 0";
 		assert Shared.ROTATE_SENSITIVITY_MULTIPLIER > 0 : "Rotate sensitivity must be greater than 0";
 		assert Shared.ZOOM_SENSITIVITY_MULTIPLIER > 0 : "Zoom sensitivity must be greater than 0";
@@ -78,12 +83,16 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		this.curAngleX = 0;
 		this.curAngleY = 0;
 
+		this.lockHorizAxis = false;
+		this.lockVertAxis = false;
+
 		glcaps = new GLCapabilities(GLProfile.get(GLProfile.GL2));
 		glcaps.setDoubleBuffered(true);
 		glcaps.setHardwareAccelerated(true);
 
 		glcanvas = new GLCanvas(glcaps);
 		glcanvas.setSize(720, 720);
+		glcanvas.addKeyListener(this);
 		glcanvas.addMouseListener(this);
 		glcanvas.addGLEventListener(this);
 		glcanvas.addMouseWheelListener(this);
@@ -322,12 +331,14 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 
 		if (e.getWheelRotation() == -1) {
 			if (this.zoomDistance > 50)
-				this.zoomDistance -= Shared.ZOOM_SENSITIVITY_MULTIPLIER;
+				this.zoomDistance -= (Shared.ZOOM_SENSITIVITY_MULTIPLIER
+						/ ((decreaseSensitivity) ? Shared.DECREASE_SENSITIVITY_MULTIPLIER : 1));
 			else
 				this.zoomDistance = 50;
 		} else {
 			if (this.zoomDistance < 300)
-				this.zoomDistance += Shared.ZOOM_SENSITIVITY_MULTIPLIER;
+				this.zoomDistance += (Shared.ZOOM_SENSITIVITY_MULTIPLIER
+						/ ((decreaseSensitivity) ? Shared.DECREASE_SENSITIVITY_MULTIPLIER : 1));
 			else
 				this.zoomDistance = 300;
 		}
@@ -345,8 +356,14 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 
 			// Camera panning
 
-			curX += dx;
-			curY += dy;
+			if (lockHorizAxis) {
+				curX += (dx / ((decreaseSensitivity) ? Shared.DECREASE_SENSITIVITY_MULTIPLIER : 1));
+			} else if (lockVertAxis) {
+				curY += (dy / ((decreaseSensitivity) ? Shared.DECREASE_SENSITIVITY_MULTIPLIER : 1));
+			} else {
+				curX += (dx / ((decreaseSensitivity) ? Shared.DECREASE_SENSITIVITY_MULTIPLIER : 1));
+				curY += (dy / ((decreaseSensitivity) ? Shared.DECREASE_SENSITIVITY_MULTIPLIER : 1));
+			}
 
 			// TODO use robot to move mouse back to original position
 
@@ -359,10 +376,21 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 			double thetadx = Math.atan((double) dx / (double) zoomDistance);
 			double thetady = Math.atan((double) dy / (double) zoomDistance);
 
-			// TODO rest angle if over 2pi
+			// TODO reset angle if over 2pi
 
-			curAngleX += (thetadx) * Shared.ROTATE_SENSITIVITY_MULTIPLIER;
-			curAngleY += (thetady) * Shared.ROTATE_SENSITIVITY_MULTIPLIER;
+			if (lockHorizAxis) {
+				curAngleX += (thetadx) * (Shared.ROTATE_SENSITIVITY_MULTIPLIER
+						/ ((decreaseSensitivity) ? Shared.DECREASE_SENSITIVITY_MULTIPLIER : 1));
+			} else if (lockVertAxis) {
+				curAngleY += (thetady) * (Shared.ROTATE_SENSITIVITY_MULTIPLIER
+						/ ((decreaseSensitivity) ? Shared.DECREASE_SENSITIVITY_MULTIPLIER : 1));
+			} else {
+				curAngleX += (thetadx) * (Shared.ROTATE_SENSITIVITY_MULTIPLIER
+						/ ((decreaseSensitivity) ? Shared.DECREASE_SENSITIVITY_MULTIPLIER : 1));
+
+				curAngleY += (thetady) * (Shared.ROTATE_SENSITIVITY_MULTIPLIER
+						/ ((decreaseSensitivity) ? Shared.DECREASE_SENSITIVITY_MULTIPLIER : 1));
+			}
 
 			Logger.debug("Rotate - curAngleX: {} curAngleY: {}", curAngleX, curAngleY);
 		}
@@ -395,6 +423,34 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	}
 
 	@Override
+	public void keyPressed(KeyEvent e) {
+		if (!lockHorizAxis && e.getKeyCode() == KeyEvent.VK_Z)
+			lockHorizAxis = true;
+		else if (!lockVertAxis && e.getKeyCode() == KeyEvent.VK_X)
+			lockVertAxis = true;
+		else if (!decreaseSensitivity && e.getKeyCode() == KeyEvent.VK_C)
+			decreaseSensitivity = true;
+		else
+			return;
+
+		Logger.debug("Key pressed: {}", e.getKeyChar());
+	}
+
+	@Override
+	public void keyReleased(KeyEvent e) {
+		if (lockHorizAxis && e.getKeyCode() == KeyEvent.VK_Z)
+			lockHorizAxis = false;
+		else if (lockVertAxis && e.getKeyCode() == KeyEvent.VK_X)
+			lockVertAxis = false;
+		else if (decreaseSensitivity && e.getKeyCode() == KeyEvent.VK_C)
+			decreaseSensitivity = false;
+		else
+			return;
+
+		Logger.debug("Key released: {}", e.getKeyChar());
+	}
+
+	@Override
 	public void mouseClicked(MouseEvent arg0) {
 		// TODO Auto-generated method stub
 
@@ -414,18 +470,6 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 
 	@Override
 	public void mouseMoved(MouseEvent e) {
-		// TODO Auto-generated method stub
-
-	}
-	
-	@Override
-	public void keyPressed(KeyEvent arg0) {
-		// TODO Auto-generated method stub
-
-	}
-
-	@Override
-	public void keyReleased(KeyEvent e) {
 		// TODO Auto-generated method stub
 
 	}
