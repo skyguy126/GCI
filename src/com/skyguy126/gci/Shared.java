@@ -7,7 +7,11 @@ public class Shared {
 	public static final String VERSION = "v1.0";
 	
 	public static final boolean DEBUG_MODE = true;
+	public static final boolean VSYNC = true;
+	
 	public static final Level LOG_LEVEL = (DEBUG_MODE) ? Level.DEBUG : Level.INFO;
 	
-	public static final int SENSITIVITY_MULTIPLIER = 10;
+	public static double PAN_SENSITIVITY_MULTIPLIER = 10.0;
+	public static double ZOOM_SENSITIVITY_MULTIPLIER = 10.0;
+	public static double ROTATE_SENSITIVITY_MULTIPLIER = 10.0;
 }

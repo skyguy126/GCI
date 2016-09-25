@@ -1,7 +1,9 @@
 package com.skyguy126.gci;
 
 import java.awt.Frame;
+
 import javax.swing.JFileChooser;
+import javax.swing.JFrame;
 import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
 
@@ -11,6 +13,8 @@ import java.awt.MenuBar;
 import java.awt.MenuItem;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.awt.event.KeyEvent;
+import java.awt.event.KeyListener;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseListener;
 import java.awt.event.MouseMotionListener;
@@ -31,27 +35,48 @@ import com.jogamp.opengl.awt.GLCanvas;
 import com.jogamp.opengl.glu.GLU;
 import com.jogamp.opengl.util.Animator;
 
-public class RenderUI
-		implements WindowListener, GLEventListener, MouseWheelListener, MouseMotionListener, MouseListener {
+// TODO
+// Add key press detector to lock movement to certain axis
+// Add console writer to log in JFrame
+// Add method to reset camera position
+// Add settings to change mouse sensitivity
+
+public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotionListener, MouseListener, KeyListener {
 
 	private Frame frame;
 	private MenuBar menuBar;
+
+	private JFrame logFrame;
+	private JFrame controlFrame;
 
 	private GLCapabilities glcaps;
 	private GLCanvas glcanvas;
 	private Animator animator;
 	private GLU glu;
 
-	private volatile int zoomDistance;
-	private volatile int lastX;
-	private volatile int lastY;
-	private volatile int curX;
-	private volatile int curY;
+	private double lastX;
+	private double lastY;
+
+	private volatile double zoomDistance;
+	private volatile double curX;
+	private volatile double curY;
+	private volatile double curAngleX;
+	private volatile double curAngleY;
 
 	public RenderUI() {
 		Configurator.defaultConfig().formatPattern(Shared.LOG_FORMAT).level(Shared.LOG_LEVEL).activate();
 
 		Logger.debug("RenderUI initiated");
+		
+		assert Shared.PAN_SENSITIVITY_MULTIPLIER > 0 : "Pan sensitivity must be greater than 0";
+		assert Shared.ROTATE_SENSITIVITY_MULTIPLIER > 0 : "Rotate sensitivity must be greater than 0";
+		assert Shared.ZOOM_SENSITIVITY_MULTIPLIER > 0 : "Zoom sensitivity must be greater than 0";
+
+		this.zoomDistance = 100;
+		this.curX = 0;
+		this.curY = 0;
+		this.curAngleX = 0;
+		this.curAngleY = 0;
 
 		glcaps = new GLCapabilities(GLProfile.get(GLProfile.GL2));
 		glcaps.setDoubleBuffered(true);
@@ -67,8 +92,50 @@ public class RenderUI
 		frame = new Frame("GCODE Interpreter - " + Shared.VERSION);
 		frame.setSize(800, 800);
 		frame.setResizable(false);
-		frame.addWindowListener(this);
 		frame.add(glcanvas);
+		frame.setLocationRelativeTo(null);
+		frame.addWindowListener(new WindowListener() {
+			@Override
+			public void windowClosing(WindowEvent evt) {
+				exit();
+			}
+
+			@Override
+			public void windowActivated(WindowEvent evt) {
+				// TODO Auto-generated method stub
+
+			}
+
+			@Override
+			public void windowClosed(WindowEvent evt) {
+				// TODO Auto-generated method stub
+
+			}
+
+			@Override
+			public void windowDeactivated(WindowEvent evt) {
+				// TODO Auto-generated method stub
+
+			}
+
+			@Override
+			public void windowDeiconified(WindowEvent evt) {
+				// TODO Auto-generated method stub
+
+			}
+
+			@Override
+			public void windowIconified(WindowEvent evt) {
+				// TODO Auto-generated method stub
+
+			}
+
+			@Override
+			public void windowOpened(WindowEvent evt) {
+				// TODO Auto-generated method stub
+
+			}
+		});
 
 		menuBar = new MenuBar();
 		Menu file = new Menu("File");
@@ -112,12 +179,19 @@ public class RenderUI
 
 		file.add(openMenuItem);
 		file.add(exitMenuItem);
+
 		menuBar.add(file);
-
-		this.zoomDistance = 100;
-
 		frame.setMenuBar(menuBar);
+
+		logFrame = new JFrame("Log");
+		logFrame.setSize(400, 800);
+		logFrame.setResizable(true);
+		logFrame.setLocation((int) frame.getLocation().getX() + 800, (int) frame.getLocation().getY());
+		logFrame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+
+		logFrame.setVisible(true);
 		frame.setVisible(true);
+		frame.requestFocus();
 	}
 
 	@Override
@@ -126,16 +200,64 @@ public class RenderUI
 
 		gl.glClear(GL2.GL_COLOR_BUFFER_BIT | GL2.GL_DEPTH_BUFFER_BIT);
 
-		setCamera(gl, glu, zoomDistance);
-		gl.glTranslated(curX/100.0, curY/-100.0, 0);
+		setCamera(gl, glu);
 
-		gl.glColor3f(0.9f, 0.5f, 0.2f);
-		gl.glBegin(GL2.GL_TRIANGLE_FAN);
+		gl.glTranslated(curX / 100.0, curY / -100.0, 0);
+		gl.glRotated(curAngleY, 1, 0, 0);
+		gl.glRotated(curAngleX, 0, 1, 0);
 
-		gl.glVertex3f(-20, -20, 0);
-		gl.glVertex3f(+20, -20, 0);
-		gl.glVertex3f(0, 20, 0);
+		gl.glBegin(GL2.GL_POLYGON);
+		gl.glColor3f(1.0f, 0.0f, 0.0f);
+		gl.glVertex3f(10f, -10f, -10f);
+		gl.glColor3f(0.0f, 1.0f, 0.0f);
+		gl.glVertex3f(10f, 10f, -10f);
+		gl.glColor3f(0.0f, 0.0f, 1.0f);
+		gl.glVertex3f(-10f, 10f, -10f);
+		gl.glColor3f(1.0f, 0.0f, 1.0f);
+		gl.glVertex3f(-10f, -10f, -10f);
 		gl.glEnd();
+
+		gl.glBegin(GL2.GL_POLYGON);
+		gl.glColor3f(1.0f, 1.0f, 1.0f);
+		gl.glVertex3f(10f, -10f, 10);
+		gl.glVertex3f(10f, 10, 10f);
+		gl.glVertex3f(-10f, 10f, 10f);
+		gl.glVertex3f(-10f, -10f, 10f);
+		gl.glEnd();
+
+		gl.glBegin(GL2.GL_POLYGON);
+		gl.glColor3f(1.0f, 0.0f, 1.0f);
+		gl.glVertex3f(10f, -10f, -10f);
+		gl.glVertex3f(10f, 10f, -10f);
+		gl.glVertex3f(10f, 10f, 10f);
+		gl.glVertex3f(10f, -10f, 10f);
+		gl.glEnd();
+
+		gl.glBegin(GL2.GL_POLYGON);
+		gl.glColor3f(0.0f, 1.0f, 0.0f);
+		gl.glVertex3f(-10f, -10f, 10f);
+		gl.glVertex3f(-10f, 10f, 10f);
+		gl.glVertex3f(-10f, 10f, -10f);
+		gl.glVertex3f(-10f, -10f, -10f);
+		gl.glEnd();
+
+		gl.glBegin(GL2.GL_POLYGON);
+		gl.glColor3f(0.0f, 0.0f, 1.0f);
+		gl.glVertex3f(10f, 10f, 10f);
+		gl.glVertex3f(10f, 10f, -10f);
+		gl.glVertex3f(-10f, 10f, -10f);
+		gl.glVertex3f(-10f, 10f, 10f);
+		gl.glEnd();
+
+		gl.glBegin(GL2.GL_POLYGON);
+		gl.glColor3f(1.0f, 0.0f, 0.0f);
+		gl.glVertex3f(10f, -10f, -10f);
+		gl.glVertex3f(10f, -10f, 10f);
+		gl.glVertex3f(-10f, -10f, 10f);
+		gl.glVertex3f(-10f, -10f, -10f);
+		gl.glEnd();
+
+		gl.glFlush();
 	}
 
 	@Override
@@ -156,9 +278,9 @@ public class RenderUI
 		gl.glShadeModel(GL2.GL_SMOOTH);
 		gl.glHint(GL2.GL_PERSPECTIVE_CORRECTION_HINT, GL2.GL_NICEST);
 		gl.glClearColor(0f, 0f, 0f, 1f);
-		gl.setSwapInterval(1);
+		gl.setSwapInterval((Shared.VSYNC) ? 1 : 0);
 
-		setCamera(gl, glu, zoomDistance);
+		setCamera(gl, glu);
 
 		animator = new Animator(glcanvas);
 		animator.start();
@@ -172,13 +294,13 @@ public class RenderUI
 		Logger.debug("GL reshape");
 	}
 
-	public void setCamera(GL2 gl, GLU glu, float distance) {
+	public void setCamera(GL2 gl, GLU glu) {
 		gl.glMatrixMode(GL2.GL_PROJECTION);
 		gl.glLoadIdentity();
 
 		float widthHeightRatio = (float) glcanvas.getWidth() / (float) glcanvas.getHeight();
 		glu.gluPerspective(45, widthHeightRatio, 1, 1000);
-		glu.gluLookAt(0, 0, distance, 0, 0, 0, 0, 1, 0);
+		glu.gluLookAt(0, 0, zoomDistance, 0, 0, 0, 0, 1, 0);
 
 		gl.glMatrixMode(GL2.GL_MODELVIEW);
 		gl.glLoadIdentity();
@@ -200,74 +322,94 @@ public class RenderUI
 
 		if (e.getWheelRotation() == -1) {
 			if (this.zoomDistance > 50)
-				this.zoomDistance -= 10;
+				this.zoomDistance -= Shared.ZOOM_SENSITIVITY_MULTIPLIER;
 			else
 				this.zoomDistance = 50;
 		} else {
 			if (this.zoomDistance < 300)
-				this.zoomDistance += 10;
+				this.zoomDistance += Shared.ZOOM_SENSITIVITY_MULTIPLIER;
 			else
 				this.zoomDistance = 300;
 		}
 
-		Logger.debug("Mouse wheel pos {}", this.zoomDistance);
+		Logger.debug("Zoom - {}", this.zoomDistance);
 	}
 
 	@Override
 	public void mouseDragged(MouseEvent e) {
+
+		double dx = (e.getX() - lastX) * Shared.PAN_SENSITIVITY_MULTIPLIER;
+		double dy = (e.getY() - lastY) * Shared.PAN_SENSITIVITY_MULTIPLIER;
+
 		if (SwingUtilities.isMiddleMouseButton(e)) {
-			
-			int dx = (e.getX() - lastX) * Shared.SENSITIVITY_MULTIPLIER;
-			int dy = (e.getY() - lastY) * Shared.SENSITIVITY_MULTIPLIER;
-			
-			lastX = e.getX();
-			lastY = e.getY();
-			
+
+			// Camera panning
+
 			curX += dx;
 			curY += dy;
-			
-			Logger.debug("Drag - dX: {} dY: {}", dx, dy);
+
+			// TODO use robot to move mouse back to original position
+
+			Logger.debug("Drag - dx: {} dy: {}", dx, dy);
+
+		} else if (SwingUtilities.isLeftMouseButton(e)) {
+
+			// Rotate camera here
+
+			double thetadx = Math.atan((double) dx / (double) zoomDistance);
+			double thetady = Math.atan((double) dy / (double) zoomDistance);
+
+			// TODO rest angle if over 2pi
+
+			curAngleX += (thetadx) * Shared.ROTATE_SENSITIVITY_MULTIPLIER;
+			curAngleY += (thetady) * Shared.ROTATE_SENSITIVITY_MULTIPLIER;
+
+			Logger.debug("Rotate - curAngleX: {} curAngleY: {}", curAngleX, curAngleY);
 		}
+
+		lastX = e.getX();
+		lastY = e.getY();
 	}
-	
+
 	@Override
 	public void mousePressed(MouseEvent e) {
-		if (SwingUtilities.isMiddleMouseButton(e)) {
+		if (SwingUtilities.isMiddleMouseButton(e))
 			Logger.debug("Drag started");
-			
-			lastX = e.getX();
-			lastY = e.getY();
-		}
+		else if (SwingUtilities.isLeftMouseButton(e))
+			Logger.debug("Rotate started");
+		else
+			return;
+
+		lastX = e.getX();
+		lastY = e.getY();
 	}
 
 	@Override
 	public void mouseReleased(MouseEvent e) {
-		if (SwingUtilities.isMiddleMouseButton(e)) {
+		if (SwingUtilities.isMiddleMouseButton(e))
 			Logger.debug("Drag ended");
-		}
+		else if (SwingUtilities.isLeftMouseButton(e))
+			Logger.debug("Rotate ended");
+		else
+			return;
 	}
-	
-	@Override
-	public void windowClosing(WindowEvent evt) {
-		exit();
-	}
-	
+
 	@Override
 	public void mouseClicked(MouseEvent arg0) {
 		// TODO Auto-generated method stub
-		
+
 	}
 
 	@Override
 	public void mouseEntered(MouseEvent arg0) {
 		// TODO Auto-generated method stub
-		
+
 	}
 
 	@Override
 	public void mouseExited(MouseEvent arg0) {
 		// TODO Auto-generated method stub
-		
+
 	}
 
 	@Override
@@ -275,39 +417,21 @@ public class RenderUI
 		// TODO Auto-generated method stub
 
 	}
-
+	
 	@Override
-	public void windowActivated(WindowEvent evt) {
+	public void keyPressed(KeyEvent arg0) {
 		// TODO Auto-generated method stub
 
 	}
 
 	@Override
-	public void windowClosed(WindowEvent evt) {
+	public void keyReleased(KeyEvent e) {
 		// TODO Auto-generated method stub
 
 	}
 
 	@Override
-	public void windowDeactivated(WindowEvent evt) {
-		// TODO Auto-generated method stub
-
-	}
-
-	@Override
-	public void windowDeiconified(WindowEvent evt) {
-		// TODO Auto-generated method stub
-
-	}
-
-	@Override
-	public void windowIconified(WindowEvent evt) {
-		// TODO Auto-generated method stub
-
-	}
-
-	@Override
-	public void windowOpened(WindowEvent evt) {
+	public void keyTyped(KeyEvent e) {
 		// TODO Auto-generated method stub
 
 	}
@@ -315,5 +439,4 @@ public class RenderUI
 	public static void main(String[] args) {
 		RenderUI gui = new RenderUI();
 	}
-
 }
