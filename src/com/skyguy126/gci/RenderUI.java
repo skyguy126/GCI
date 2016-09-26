@@ -1,13 +1,20 @@
 package com.skyguy126.gci;
 
+import java.awt.Color;
 import java.awt.Frame;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
 
+import javax.imageio.ImageIO;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.Buffer;
+import java.nio.ByteBuffer;
 import java.awt.Menu;
 import java.awt.MenuBar;
 import java.awt.MenuItem;
@@ -22,6 +29,7 @@ import java.awt.event.MouseWheelEvent;
 import java.awt.event.MouseWheelListener;
 import java.awt.event.WindowEvent;
 import java.awt.event.WindowListener;
+import java.awt.image.BufferedImage;
 
 import org.pmw.tinylog.Configurator;
 import org.pmw.tinylog.Logger;
@@ -34,13 +42,13 @@ import com.jogamp.opengl.GLProfile;
 import com.jogamp.opengl.awt.GLCanvas;
 import com.jogamp.opengl.glu.GLU;
 import com.jogamp.opengl.util.Animator;
+import com.sun.prism.impl.BufferUtil;
 
 // TODO
-// Add key press detector to lock movement to certain axis
-// Add key press detector to decrease sensitivity multipliers
 // Add console writer to log in JFrame
 // Add method to reset camera position
 // Add settings to change mouse sensitivity
+// Switch to float values gl
 
 public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotionListener, MouseListener, KeyListener {
 
@@ -48,7 +56,6 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	private MenuBar menuBar;
 
 	private JFrame logFrame;
-	private JFrame controlFrame;
 
 	private GLCapabilities glcaps;
 	private GLCanvas glcanvas;
@@ -326,19 +333,63 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		System.exit(0);
 	}
 
+	public void resetCamera() {
+		this.zoomDistance = 100;
+		this.curAngleX = 0;
+		this.curAngleY = 0;
+		this.curX = 0;
+		this.curY = 0;
+	}
+
+	public double getDecreaseSensitivityMultiplier() {
+		return ((decreaseSensitivity) ? Shared.DECREASE_SENSITIVITY_MULTIPLIER : 1);
+	}
+
+	public void captureCanvas() {
+		
+		// TODO NOT WORKING
+		
+		BufferedImage b = new BufferedImage(glcanvas.getWidth(), glcanvas.getHeight(), BufferedImage.TYPE_INT_RGB);
+		Graphics g = b.createGraphics();
+		glcanvas.setupPrint(glcanvas.getWidth(), glcanvas.getWidth(), 50, 50, 50);
+		glcanvas.print(g);
+
+		ByteBuffer buffer = ByteBuffer.allocate(4 * glcanvas.getWidth() * glcanvas.getHeight());
+
+		glcanvas.getGL().getGL2().glReadBuffer(GL2.GL_BACK);
+		glcanvas.getGL().getGL2().glReadPixels(0, -799, 0, 799, GL2.GL_RGBA,
+				GL2.GL_UNSIGNED_BYTE, buffer);
+
+		
+		for (int h = 0; h < glcanvas.getHeight(); h++) {
+			for (int w = 0; w < glcanvas.getWidth(); w++) {
+				if (buffer.get() != 0) {
+					System.out.println("found");
+				}
+			}
+		}
+
+		try {
+
+			ImageIO.write(b, "png", new File("test.png"));
+		} catch (IOException ex) {
+			// Error handling
+		}
+		glcanvas.releasePrint();
+		g.dispose();
+	}
+
 	@Override
 	public void mouseWheelMoved(MouseWheelEvent e) {
 
 		if (e.getWheelRotation() == -1) {
 			if (this.zoomDistance > 50)
-				this.zoomDistance -= (Shared.ZOOM_SENSITIVITY_MULTIPLIER
-						/ ((decreaseSensitivity) ? Shared.DECREASE_SENSITIVITY_MULTIPLIER : 1));
+				this.zoomDistance -= (Shared.ZOOM_SENSITIVITY_MULTIPLIER / getDecreaseSensitivityMultiplier());
 			else
 				this.zoomDistance = 50;
 		} else {
 			if (this.zoomDistance < 300)
-				this.zoomDistance += (Shared.ZOOM_SENSITIVITY_MULTIPLIER
-						/ ((decreaseSensitivity) ? Shared.DECREASE_SENSITIVITY_MULTIPLIER : 1));
+				this.zoomDistance += (Shared.ZOOM_SENSITIVITY_MULTIPLIER / getDecreaseSensitivityMultiplier());
 			else
 				this.zoomDistance = 300;
 		}
@@ -357,12 +408,12 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 			// Camera panning
 
 			if (lockHorizAxis) {
-				curX += (dx / ((decreaseSensitivity) ? Shared.DECREASE_SENSITIVITY_MULTIPLIER : 1));
+				curX += (dx / getDecreaseSensitivityMultiplier());
 			} else if (lockVertAxis) {
-				curY += (dy / ((decreaseSensitivity) ? Shared.DECREASE_SENSITIVITY_MULTIPLIER : 1));
+				curY += (dy / getDecreaseSensitivityMultiplier());
 			} else {
-				curX += (dx / ((decreaseSensitivity) ? Shared.DECREASE_SENSITIVITY_MULTIPLIER : 1));
-				curY += (dy / ((decreaseSensitivity) ? Shared.DECREASE_SENSITIVITY_MULTIPLIER : 1));
+				curX += (dx / getDecreaseSensitivityMultiplier());
+				curY += (dy / getDecreaseSensitivityMultiplier());
 			}
 
 			// TODO use robot to move mouse back to original position
@@ -379,17 +430,13 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 			// TODO reset angle if over 2pi
 
 			if (lockHorizAxis) {
-				curAngleX += (thetadx) * (Shared.ROTATE_SENSITIVITY_MULTIPLIER
-						/ ((decreaseSensitivity) ? Shared.DECREASE_SENSITIVITY_MULTIPLIER : 1));
+				curAngleX += (thetadx) * (Shared.ROTATE_SENSITIVITY_MULTIPLIER / getDecreaseSensitivityMultiplier());
 			} else if (lockVertAxis) {
-				curAngleY += (thetady) * (Shared.ROTATE_SENSITIVITY_MULTIPLIER
-						/ ((decreaseSensitivity) ? Shared.DECREASE_SENSITIVITY_MULTIPLIER : 1));
+				curAngleY += (thetady) * (Shared.ROTATE_SENSITIVITY_MULTIPLIER / getDecreaseSensitivityMultiplier());
 			} else {
-				curAngleX += (thetadx) * (Shared.ROTATE_SENSITIVITY_MULTIPLIER
-						/ ((decreaseSensitivity) ? Shared.DECREASE_SENSITIVITY_MULTIPLIER : 1));
+				curAngleX += (thetadx) * (Shared.ROTATE_SENSITIVITY_MULTIPLIER / getDecreaseSensitivityMultiplier());
 
-				curAngleY += (thetady) * (Shared.ROTATE_SENSITIVITY_MULTIPLIER
-						/ ((decreaseSensitivity) ? Shared.DECREASE_SENSITIVITY_MULTIPLIER : 1));
+				curAngleY += (thetady) * (Shared.ROTATE_SENSITIVITY_MULTIPLIER / getDecreaseSensitivityMultiplier());
 			}
 
 			Logger.debug("Rotate - curAngleX: {} curAngleY: {}", curAngleX, curAngleY);
@@ -430,6 +477,10 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 			lockVertAxis = true;
 		else if (!decreaseSensitivity && e.getKeyCode() == KeyEvent.VK_C)
 			decreaseSensitivity = true;
+		else if (e.getKeyCode() == KeyEvent.VK_V)
+			resetCamera();
+		else if (e.getKeyCode() == KeyEvent.VK_B)
+			captureCanvas();
 		else
 			return;
 
