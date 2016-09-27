@@ -74,6 +74,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	private volatile boolean lockHorizAxis;
 	private volatile boolean lockVertAxis;
 	private volatile boolean decreaseSensitivity;
+	private volatile boolean isValid;
 
 	public RenderUI() {
 		Configurator.defaultConfig().formatPattern(Shared.LOG_FORMAT).level(Shared.LOG_LEVEL).activate();
@@ -183,15 +184,19 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 
 					if (fileExtension.equals(".nc") || fileExtension.equals(".txt")) {
 						Logger.debug("Success");
+						isValid = true;
+						
 					} else {
 						Logger.warn("Invalid file type {}", fileExtension);
 						JOptionPane.showMessageDialog(frame, "File must be of extenstion *.nc", "Invalid File Type",
 								JOptionPane.WARNING_MESSAGE);
+						isValid = false;
 					}
 
 				}
 			}
 		});
+		
 
 		file.add(openMenuItem);
 		file.add(exitMenuItem);
@@ -209,7 +214,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		frame.setVisible(true);
 		frame.requestFocus();
 	}
-
+	
 	@Override
 	public void display(GLAutoDrawable glad) {
 		GL2 gl = glad.getGL().getGL2();
