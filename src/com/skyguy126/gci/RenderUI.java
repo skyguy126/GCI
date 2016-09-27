@@ -10,6 +10,8 @@ import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
+import javax.swing.JButton;
+import javax.swing.JPanel;
 
 import java.io.File;
 import java.io.IOException;
@@ -50,12 +52,18 @@ import com.sun.prism.impl.BufferUtil;
 // Add settings to change mouse sensitivity
 // Switch to float values gl
 
-public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotionListener, MouseListener, KeyListener {
+public class RenderUI extends JFrame implements GLEventListener, MouseWheelListener, MouseMotionListener, MouseListener, KeyListener {
 
 	private Frame frame;
 	private MenuBar menuBar;
 
 	private JFrame logFrame;
+	
+	
+	private JFrame controlFrame;
+	private JPanel controlPanel;
+	private JButton playButton;
+	private JButton pauseButton;
 
 	private GLCapabilities glcaps;
 	private GLCanvas glcanvas;
@@ -209,10 +217,30 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		logFrame.setResizable(true);
 		logFrame.setLocation((int) frame.getLocation().getX() + 800, (int) frame.getLocation().getY());
 		logFrame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
-
 		logFrame.setVisible(true);
+		
+		controlFrame = new JFrame("Controls");
+		controlFrame.setSize(400, 800);
+		controlFrame.setResizable(true);
+		controlFrame.setLocation((int) frame.getLocation().getX() - 400, (int) frame.getLocation().getY());
+		controlFrame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+		controlFrame.setVisible(true);
+		JPanel controlPanel = new JPanel();
+		controlFrame.add(controlPanel);
+		JButton playButton = new JButton("Play");
+		JButton pauseButton = new JButton("Pause");
+		controlPanel.add(playButton);
+		controlPanel.add(pauseButton);
+		
+		
+		
+
 		frame.setVisible(true);
 		frame.requestFocus();
+		controlPanel.setVisible(true);
+		playButton.setVisible(true);
+		pauseButton.setVisible(true);
+	Logger.debug(controlFrame);
 	}
 	
 	@Override
