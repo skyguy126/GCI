@@ -121,7 +121,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		}
 	};
 
-	private class Screenshot implements Runnable {
+	private class Screenshot extends Thread {
 
 		private ByteBuffer buffer;
 		private int height;
@@ -364,7 +364,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 			this.screenshotBuffer.clear();
 			gl.glReadPixels(0, 0, this.glWidth, this.glHeight, GL2.GL_RGB, GL2.GL_BYTE, this.screenshotBuffer);
 			Screenshot s = new Screenshot(this.screenshotBuffer, this.glHeight, this.glWidth);
-			s.run();
+			s.start();
 		}
 
 		gl.glFlush();
