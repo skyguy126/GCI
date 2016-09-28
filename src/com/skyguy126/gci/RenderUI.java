@@ -1,17 +1,23 @@
 package com.skyguy126.gci;
 
 import java.awt.Color;
+import java.awt.Component;
+import java.awt.Cursor;
 import java.awt.Font;
 import java.awt.Frame;
 import java.awt.Graphics;
+import java.awt.GridLayout;
 
 import javax.imageio.ImageIO;
 import javax.swing.JButton;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
+import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JSlider;
 import javax.swing.SwingUtilities;
+import javax.swing.border.EmptyBorder;
 
 import java.io.File;
 import java.io.IOException;
@@ -59,6 +65,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 
 	private JFrame logFrame;
 	private JFrame controlFrame;
+	private JSlider timeSlider;
 
 	private TextRenderer textRenderer;
 	private GLCapabilities glcaps;
@@ -74,6 +81,8 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	private int glHeight;
 	private int glWidth;
 
+	private boolean playButtonState;
+
 	private volatile String axisLockText;
 	private volatile String decreaseSensitivityText;
 
@@ -82,6 +91,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	private volatile double curY;
 	private volatile double curAngleX;
 	private volatile double curAngleY;
+	private volatile double currentTimePercent;
 
 	private volatile boolean lockHorizAxis;
 	private volatile boolean lockVertAxis;
@@ -89,6 +99,27 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	private volatile boolean takeScreenshot;
 
 	private volatile ByteBuffer screenshotBuffer;
+
+	private Thread timeSliderChanger = new Thread() {
+
+		// TODO allow user to manually change time slider value
+		
+		@Override
+		public void run() {
+			Logger.debug("Time slider changer thread started");
+			
+			while (true) {
+
+				timeSlider.setValue((int) (currentTimePercent * timeSlider.getMaximum()));
+
+				try {
+					Thread.sleep(17);
+				} catch (InterruptedException e) {
+
+				}
+			}
+		}
+	};
 
 	private class Screenshot implements Runnable {
 
@@ -128,12 +159,12 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 				Logger.debug("Save Directory: {}", directory.getAbsolutePath().toString());
 
 				try {
-					ImageIO.write(img, "png", new File(directory.getAbsolutePath() + "\\test.png"));
+					ImageIO.write(img, "png", new File(directory.getAbsolutePath() + "\\screenshot.png"));
 				} catch (IOException e) {
 					Logger.error("Screenshot failed: {}", e);
 				}
 
-				Logger.debug("Screenshot saved");
+				Logger.info("Screenshot saved");
 
 			} else {
 				Logger.debug("Screenshot save cancelled");
@@ -162,6 +193,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		this.lockVertAxis = false;
 		this.decreaseSensitivity = false;
 		this.takeScreenshot = false;
+		this.playButtonState = true;
 
 		this.axisLockText = "Axis Lock: NA";
 		this.decreaseSensitivityText = "Dec Sensitivity: false";
@@ -260,18 +292,39 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		controlFrame.setLocation((int) frame.getLocation().getX() - 400, (int) frame.getLocation().getY());
 		controlFrame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
 
-		JPanel controlPanel = new JPanel();
+		JPanel controlPanel = new JPanel(new GridLayout(6, 0));
 		JButton playButton = new JButton("Play");
-		JButton pauseButton = new JButton("Pause");
-
+		playButton.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				if (playButtonState) {
+					playButtonState = false;
+					playButton.setText("Stop");
+				} else {
+					playButtonState = true;
+					playButton.setText("Play");
+				}
+			}
+		});
 		controlPanel.add(playButton);
-		controlPanel.add(pauseButton);
-		controlFrame.add(controlPanel);
 
+		timeSlider = new JSlider(JSlider.HORIZONTAL, 0, 1000, 0);
+		timeSlider.setMajorTickSpacing(100);
+		timeSlider.setMinorTickSpacing(10);
+		timeSlider.setPaintTicks(true);
+		timeSlider.setBorder(new EmptyBorder(0, 10, 0, 10));
+		controlPanel.add(timeSlider);
+		timeSliderChanger.start();
+		
+		controlFrame.add(controlPanel);
 		logFrame.setVisible(true);
 		controlFrame.setVisible(true);
 		frame.setVisible(true);
 		frame.requestFocus();
+	}
+
+	public void setCurrentTimePercent(double percent) {
+		this.currentTimePercent = percent;
 	}
 
 	@Override
@@ -290,18 +343,18 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		RenderHelpers.renderLine(gl, this.lineColor, new float[] { 20f, 0f, 0f }, new float[] { 20f, 20f, 0f }, 2.5f);
 		RenderHelpers.renderLine(gl, this.lineColor, new float[] { 20f, 20f, 0f }, new float[] { 0f, 20f, 0f }, 2.5f);
 		RenderHelpers.renderLine(gl, this.lineColor, new float[] { 0f, 20f, 0f }, new float[] { 0f, 0f, 0f }, 2.5f);
-		
+
 		RenderHelpers.renderLine(gl, this.lineColor, new float[] { 0f, 0f, 0f }, new float[] { 0f, 0f, 20f }, 2.5f);
 		RenderHelpers.renderLine(gl, this.lineColor, new float[] { 0f, 0f, 20f }, new float[] { 20f, 0f, 20f }, 2.5f);
 		RenderHelpers.renderLine(gl, this.lineColor, new float[] { 20f, 0f, 20f }, new float[] { 20f, 0f, 0f }, 2.5f);
-		
+
 		RenderHelpers.renderLine(gl, this.lineColor, new float[] { 0f, 0f, 20f }, new float[] { 0f, 20f, 20f }, 2.5f);
 		RenderHelpers.renderLine(gl, this.lineColor, new float[] { 0f, 20f, 20f }, new float[] { 20f, 20f, 20f }, 2.5f);
 		RenderHelpers.renderLine(gl, this.lineColor, new float[] { 20f, 20f, 20f }, new float[] { 20f, 0f, 20f }, 2.5f);
-		
+
 		RenderHelpers.renderLine(gl, this.lineColor, new float[] { 20f, 20f, 20f }, new float[] { 20f, 20f, 0f }, 2.5f);
 		RenderHelpers.renderLine(gl, this.lineColor, new float[] { 0f, 20f, 20f }, new float[] { 0f, 20f, 0f }, 2.5f);
-		
+
 		RenderHelpers.renderText(this.textRenderer, this.axisLockText, 5, 5, this.glWidth, this.glHeight);
 		RenderHelpers.renderText(this.textRenderer, this.decreaseSensitivityText, 5, 35, this.glWidth, this.glHeight);
 
@@ -496,6 +549,10 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 			resetCamera();
 		} else if (e.getKeyCode() == KeyEvent.VK_B) {
 			takeScreenshot();
+		} else if (e.getKeyCode() == KeyEvent.VK_J) {
+			this.currentTimePercent -= 0.01;
+		} else if (e.getKeyCode() == KeyEvent.VK_K) {
+			this.currentTimePercent += 0.01;
 		} else {
 			return;
 		}
