@@ -1,6 +1,7 @@
 package com.skyguy126.gci;
 
 import java.awt.Color;
+import java.awt.Font;
 import java.awt.Frame;
 import java.awt.Graphics;
 
@@ -42,6 +43,7 @@ import com.jogamp.opengl.GLProfile;
 import com.jogamp.opengl.awt.GLCanvas;
 import com.jogamp.opengl.glu.GLU;
 import com.jogamp.opengl.util.Animator;
+import com.jogamp.opengl.util.awt.TextRenderer;
 
 // TODO
 // Add console writer to log in JFrame
@@ -57,6 +59,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	private JFrame logFrame;
 	private JFrame controlFrame;
 
+	private TextRenderer textRenderer;
 	private GLCapabilities glcaps;
 	private GLCanvas glcanvas;
 	private Animator animator;
@@ -67,6 +70,9 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 
 	private int glHeight;
 	private int glWidth;
+
+	private volatile String axisLockText;
+	private volatile String decreaseSensitivityText;
 
 	private volatile double zoomDistance;
 	private volatile double curX;
@@ -82,8 +88,8 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	private volatile ByteBuffer screenshotBuffer;
 
 	private class Screenshot implements Runnable {
-		private ByteBuffer buffer;
 
+		private ByteBuffer buffer;
 		private int height;
 		private int width;
 
@@ -123,7 +129,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 				} catch (IOException e) {
 					Logger.error("Screenshot failed: {}", e);
 				}
-				
+
 				Logger.debug("Screenshot saved");
 
 			} else {
@@ -153,6 +159,9 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		this.lockVertAxis = false;
 		this.decreaseSensitivity = false;
 		this.takeScreenshot = false;
+
+		this.axisLockText = "Axis Lock: NA";
+		this.decreaseSensitivityText = "Dec Sensitivity: false";
 
 		glcaps = new GLCapabilities(GLProfile.get(GLProfile.GL2));
 		glcaps.setDoubleBuffered(true);
@@ -323,6 +332,9 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		gl.glVertex3f(-10f, -10f, -10f);
 		gl.glEnd();
 
+		RenderHelpers.renderText(textRenderer, this.axisLockText, 5, 5, this.glWidth, this.glHeight);
+		RenderHelpers.renderText(textRenderer, this.decreaseSensitivityText, 5, 35, this.glWidth, this.glHeight);
+
 		if (this.takeScreenshot) {
 			Logger.info("Taking screenshot...");
 
@@ -347,6 +359,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		Logger.debug("OpenGL init");
 
 		GL2 gl = glad.getGL().getGL2();
+		textRenderer = new TextRenderer(new Font("Roboto", Font.PLAIN, 30));
 		glu = new GLU();
 
 		gl.glEnable(GL2.GL_DEPTH_TEST);
@@ -501,32 +514,43 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 
 	@Override
 	public void keyPressed(KeyEvent e) {
-		if (!lockHorizAxis && e.getKeyCode() == KeyEvent.VK_Z)
+		if (!lockHorizAxis && e.getKeyCode() == KeyEvent.VK_Z) {
 			lockHorizAxis = true;
-		else if (!lockVertAxis && e.getKeyCode() == KeyEvent.VK_X)
+			this.axisLockText = "Axis Lock: X";
+		} else if (!lockVertAxis && e.getKeyCode() == KeyEvent.VK_X && !lockHorizAxis) {
 			lockVertAxis = true;
-		else if (!decreaseSensitivity && e.getKeyCode() == KeyEvent.VK_C)
+			this.axisLockText = "Axis Lock: Y";
+		} else if (!decreaseSensitivity && e.getKeyCode() == KeyEvent.VK_C) {
 			decreaseSensitivity = true;
-		else if (e.getKeyCode() == KeyEvent.VK_V)
+			this.decreaseSensitivityText = "Dec Sensitivity: true";
+		} else if (e.getKeyCode() == KeyEvent.VK_V) {
 			resetCamera();
-		else if (e.getKeyCode() == KeyEvent.VK_B)
+		} else if (e.getKeyCode() == KeyEvent.VK_B) {
 			takeScreenshot();
-		else
+		} else {
 			return;
+		}
 
 		Logger.debug("Key pressed: {}", e.getKeyChar());
 	}
 
 	@Override
 	public void keyReleased(KeyEvent e) {
-		if (lockHorizAxis && e.getKeyCode() == KeyEvent.VK_Z)
+		
+		// TODO axis lock text resets if both buttons are pressed and released
+		
+		if (lockHorizAxis && e.getKeyCode() == KeyEvent.VK_Z) {
 			lockHorizAxis = false;
-		else if (lockVertAxis && e.getKeyCode() == KeyEvent.VK_X)
+			this.axisLockText = "Axis Lock: N/A";
+		} else if (lockVertAxis && e.getKeyCode() == KeyEvent.VK_X) {
 			lockVertAxis = false;
-		else if (decreaseSensitivity && e.getKeyCode() == KeyEvent.VK_C)
+			this.axisLockText = "Axis Lock: N/A";
+		} else if (decreaseSensitivity && e.getKeyCode() == KeyEvent.VK_C) {
 			decreaseSensitivity = false;
-		else
+			this.decreaseSensitivityText = "Dec Sensitivity: false";
+		} else {
 			return;
+		}
 
 		Logger.debug("Key released: {}", e.getKeyChar());
 	}
