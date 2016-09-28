@@ -3,17 +3,17 @@ package com.skyguy126.gci;
 import java.awt.Color;
 import java.awt.Frame;
 import java.awt.Graphics;
-import java.awt.Graphics2D;
 
 import javax.imageio.ImageIO;
+import javax.swing.JButton;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.JOptionPane;
+import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.Buffer;
 import java.nio.ByteBuffer;
 import java.awt.Menu;
 import java.awt.MenuBar;
@@ -27,8 +27,8 @@ import java.awt.event.MouseListener;
 import java.awt.event.MouseMotionListener;
 import java.awt.event.MouseWheelEvent;
 import java.awt.event.MouseWheelListener;
+import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
-import java.awt.event.WindowListener;
 import java.awt.image.BufferedImage;
 
 import org.pmw.tinylog.Configurator;
@@ -42,13 +42,12 @@ import com.jogamp.opengl.GLProfile;
 import com.jogamp.opengl.awt.GLCanvas;
 import com.jogamp.opengl.glu.GLU;
 import com.jogamp.opengl.util.Animator;
-import com.sun.prism.impl.BufferUtil;
 
 // TODO
 // Add console writer to log in JFrame
-// Add method to reset camera position
 // Add settings to change mouse sensitivity
 // Switch to float values gl
+// Change zoom method to use FOV not glTranslate
 
 public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotionListener, MouseListener, KeyListener {
 
@@ -56,6 +55,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	private MenuBar menuBar;
 
 	private JFrame logFrame;
+	private JFrame controlFrame;
 
 	private GLCapabilities glcaps;
 	private GLCanvas glcanvas;
@@ -64,6 +64,9 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 
 	private double lastX;
 	private double lastY;
+
+	private int glHeight;
+	private int glWidth;
 
 	private volatile double zoomDistance;
 	private volatile double curX;
@@ -74,6 +77,62 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	private volatile boolean lockHorizAxis;
 	private volatile boolean lockVertAxis;
 	private volatile boolean decreaseSensitivity;
+	private volatile boolean takeScreenshot;
+
+	private volatile ByteBuffer screenshotBuffer;
+
+	private class Screenshot implements Runnable {
+		private ByteBuffer buffer;
+
+		private int height;
+		private int width;
+
+		public Screenshot(ByteBuffer b, int h, int w) {
+			this.buffer = b;
+			this.height = h;
+			this.width = w;
+		}
+
+		@Override
+		public void run() {
+
+			BufferedImage img = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+			Graphics g = img.getGraphics();
+
+			for (int h = 0; h < height; h++) {
+				for (int w = 0; w < width; w++) {
+					g.setColor(new Color(buffer.get() * 2, buffer.get() * 2, buffer.get() * 2));
+					g.drawRect(w, height - h, 1, 1);
+				}
+			}
+
+			Logger.debug("Copied bytes to buffered image");
+
+			JFileChooser fileChooser = new JFileChooser();
+			fileChooser.setDialogTitle("Save Screenshot");
+			fileChooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+			fileChooser.setAcceptAllFileFilterUsed(false);
+
+			if (fileChooser.showOpenDialog(frame.getOwner()) == JFileChooser.APPROVE_OPTION) {
+				File directory = fileChooser.getSelectedFile();
+
+				Logger.debug("Save Directory: {}", directory.getAbsolutePath().toString());
+
+				try {
+					ImageIO.write(img, "png", new File(directory.getAbsolutePath() + "\\test.png"));
+				} catch (IOException e) {
+					Logger.error("Screenshot failed: {}", e);
+				}
+				
+				Logger.debug("Screenshot saved");
+
+			} else {
+				Logger.debug("Screenshot save cancelled");
+				return;
+			}
+
+		}
+	}
 
 	public RenderUI() {
 		Configurator.defaultConfig().formatPattern(Shared.LOG_FORMAT).level(Shared.LOG_LEVEL).activate();
@@ -92,6 +151,8 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 
 		this.lockHorizAxis = false;
 		this.lockVertAxis = false;
+		this.decreaseSensitivity = false;
+		this.takeScreenshot = false;
 
 		glcaps = new GLCapabilities(GLProfile.get(GLProfile.GL2));
 		glcaps.setDoubleBuffered(true);
@@ -105,51 +166,19 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		glcanvas.addMouseWheelListener(this);
 		glcanvas.addMouseMotionListener(this);
 
+		this.glHeight = glcanvas.getHeight();
+		this.glWidth = glcanvas.getWidth();
+		this.screenshotBuffer = ByteBuffer.allocate(this.glHeight * this.glWidth * 3);
+
 		frame = new Frame("GCODE Interpreter - " + Shared.VERSION);
 		frame.setSize(800, 800);
 		frame.setResizable(false);
 		frame.add(glcanvas);
 		frame.setLocationRelativeTo(null);
-		frame.addWindowListener(new WindowListener() {
+		frame.addWindowListener(new WindowAdapter() {
 			@Override
 			public void windowClosing(WindowEvent evt) {
 				exit();
-			}
-
-			@Override
-			public void windowActivated(WindowEvent evt) {
-				// TODO Auto-generated method stub
-
-			}
-
-			@Override
-			public void windowClosed(WindowEvent evt) {
-				// TODO Auto-generated method stub
-
-			}
-
-			@Override
-			public void windowDeactivated(WindowEvent evt) {
-				// TODO Auto-generated method stub
-
-			}
-
-			@Override
-			public void windowDeiconified(WindowEvent evt) {
-				// TODO Auto-generated method stub
-
-			}
-
-			@Override
-			public void windowIconified(WindowEvent evt) {
-				// TODO Auto-generated method stub
-
-			}
-
-			@Override
-			public void windowOpened(WindowEvent evt) {
-				// TODO Auto-generated method stub
-
 			}
 		});
 
@@ -170,26 +199,32 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 			public void actionPerformed(ActionEvent e) {
 
 				JFileChooser fileChooser = new JFileChooser();
-				fileChooser.showOpenDialog(frame.getOwner());
-				File file = fileChooser.getSelectedFile();
-				if (file != null) {
 
-					String fileExtension = "";
-					String filePath = file.getAbsolutePath();
-					int extensionIndex = filePath.lastIndexOf(".");
+				if (fileChooser.showOpenDialog(frame.getOwner()) == JFileChooser.APPROVE_OPTION) {
+					File file = fileChooser.getSelectedFile();
+					if (file != null) {
 
-					if (extensionIndex != -1)
-						fileExtension = filePath.substring(extensionIndex);
+						String fileExtension = "";
+						String filePath = file.getAbsolutePath();
+						int extensionIndex = filePath.lastIndexOf(".");
 
-					if (fileExtension.equals(".nc") || fileExtension.equals(".txt")) {
-						Logger.debug("Success");
-					} else {
-						Logger.warn("Invalid file type {}", fileExtension);
-						JOptionPane.showMessageDialog(frame, "File must be of extenstion *.nc", "Invalid File Type",
-								JOptionPane.WARNING_MESSAGE);
+						if (extensionIndex != -1)
+							fileExtension = filePath.substring(extensionIndex);
+
+						if (fileExtension.equals(".nc") || fileExtension.equals(".txt")) {
+							Logger.debug("Success");
+						} else {
+							Logger.warn("Invalid file type {}", fileExtension);
+							JOptionPane.showMessageDialog(frame, "File must be of extenstion *.nc", "Invalid File Type",
+									JOptionPane.WARNING_MESSAGE);
+						}
+
 					}
-
+				} else {
+					Logger.debug("File open cancelled");
+					return;
 				}
+
 			}
 		});
 
@@ -205,7 +240,22 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		logFrame.setLocation((int) frame.getLocation().getX() + 800, (int) frame.getLocation().getY());
 		logFrame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
 
+		controlFrame = new JFrame("Controls");
+		controlFrame.setSize(400, 800);
+		controlFrame.setResizable(true);
+		controlFrame.setLocation((int) frame.getLocation().getX() - 400, (int) frame.getLocation().getY());
+		controlFrame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+
+		JPanel controlPanel = new JPanel();
+		JButton playButton = new JButton("Play");
+		JButton pauseButton = new JButton("Pause");
+
+		controlPanel.add(playButton);
+		controlPanel.add(pauseButton);
+		controlFrame.add(controlPanel);
+
 		logFrame.setVisible(true);
+		controlFrame.setVisible(true);
 		frame.setVisible(true);
 		frame.requestFocus();
 	}
@@ -272,6 +322,16 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		gl.glVertex3f(-10f, -10f, 10f);
 		gl.glVertex3f(-10f, -10f, -10f);
 		gl.glEnd();
+
+		if (this.takeScreenshot) {
+			Logger.info("Taking screenshot...");
+
+			this.takeScreenshot = false;
+			this.screenshotBuffer.clear();
+			gl.glReadPixels(0, 0, this.glWidth, this.glHeight, GL2.GL_RGB, GL2.GL_BYTE, this.screenshotBuffer);
+			Screenshot s = new Screenshot(this.screenshotBuffer, this.glHeight, this.glWidth);
+			s.run();
+		}
 
 		gl.glFlush();
 	}
@@ -345,38 +405,8 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		return ((decreaseSensitivity) ? Shared.DECREASE_SENSITIVITY_MULTIPLIER : 1);
 	}
 
-	public void captureCanvas() {
-		
-		// TODO NOT WORKING
-		
-		BufferedImage b = new BufferedImage(glcanvas.getWidth(), glcanvas.getHeight(), BufferedImage.TYPE_INT_RGB);
-		Graphics g = b.createGraphics();
-		glcanvas.setupPrint(glcanvas.getWidth(), glcanvas.getWidth(), 50, 50, 50);
-		glcanvas.print(g);
-
-		ByteBuffer buffer = ByteBuffer.allocate(4 * glcanvas.getWidth() * glcanvas.getHeight());
-
-		glcanvas.getGL().getGL2().glReadBuffer(GL2.GL_BACK);
-		glcanvas.getGL().getGL2().glReadPixels(0, -799, 0, 799, GL2.GL_RGBA,
-				GL2.GL_UNSIGNED_BYTE, buffer);
-
-		
-		for (int h = 0; h < glcanvas.getHeight(); h++) {
-			for (int w = 0; w < glcanvas.getWidth(); w++) {
-				if (buffer.get() != 0) {
-					System.out.println("found");
-				}
-			}
-		}
-
-		try {
-
-			ImageIO.write(b, "png", new File("test.png"));
-		} catch (IOException ex) {
-			// Error handling
-		}
-		glcanvas.releasePrint();
-		g.dispose();
+	public void takeScreenshot() {
+		this.takeScreenshot = true;
 	}
 
 	@Override
@@ -480,7 +510,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		else if (e.getKeyCode() == KeyEvent.VK_V)
 			resetCamera();
 		else if (e.getKeyCode() == KeyEvent.VK_B)
-			captureCanvas();
+			takeScreenshot();
 		else
 			return;
 
