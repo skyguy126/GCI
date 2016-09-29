@@ -54,9 +54,10 @@ import com.jogamp.opengl.util.awt.TextRenderer;
 // TODO
 // Add console writer to log in JFrame
 // Add settings to change mouse sensitivity
-// Switch to float values gl
+// Switch to float values in gl loop
 // Change zoom method to use FOV not glTranslate
 // Fix screenshot aspect ratio
+// Add anti-aliasing
 
 public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotionListener, MouseListener, KeyListener {
 
@@ -152,6 +153,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 			fileChooser.setDialogTitle("Save Screenshot");
 			fileChooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
 			fileChooser.setAcceptAllFileFilterUsed(false);
+			fileChooser.setApproveButtonText("Save");
 
 			if (fileChooser.showOpenDialog(frame.getOwner()) == JFileChooser.APPROVE_OPTION) {
 				File directory = fileChooser.getSelectedFile();
@@ -198,11 +200,12 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		this.axisLockText = "Axis Lock: NA";
 		this.decreaseSensitivityText = "Dec Sensitivity: false";
 
-		this.lineColor = new Color(1.0f, 1.0f, 1.0f);
+		this.lineColor = new Color(0f, 0.4f, 1.0f);
 
 		glcaps = new GLCapabilities(GLProfile.get(GLProfile.GL2));
 		glcaps.setDoubleBuffered(true);
 		glcaps.setHardwareAccelerated(true);
+		glcaps.setSampleBuffers(true);
 
 		glcanvas = new GLCanvas(glcaps);
 		glcanvas.setSize(720, 720);
@@ -316,6 +319,15 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		controlPanel.add(timeSlider);
 		timeSliderChanger.start();
 		
+		JButton screenshotButton = new JButton("Screenshot");
+		screenshotButton.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				takeScreenshot();
+			}
+		});
+		controlPanel.add(screenshotButton);
+		
 		controlFrame.add(controlPanel);
 		logFrame.setVisible(true);
 		controlFrame.setVisible(true);
@@ -338,6 +350,12 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		gl.glTranslated(curX / 100.0, curY / -100.0, 0);
 		gl.glRotated(curAngleY, 1, 0, 0);
 		gl.glRotated(curAngleX, 0, 1, 0);
+		
+		// Draw coordinate axis
+		
+		RenderHelpers.renderLine(gl, Color.RED, new float[] { 0f, 0f, 0f }, new float[] { 40f, 0f, 0f }, 5f);
+		RenderHelpers.renderLine(gl, Color.RED, new float[] { 0f, 0f, 0f }, new float[] { 0f, 40f, 0f }, 5f);
+		RenderHelpers.renderLine(gl, Color.RED, new float[] { 0f, 0f, 0f }, new float[] { 0f, 0f, 40f }, 5f);
 
 		RenderHelpers.renderLine(gl, this.lineColor, new float[] { 0f, 0f, 0f }, new float[] { 20f, 0f, 0f }, 2.5f);
 		RenderHelpers.renderLine(gl, this.lineColor, new float[] { 20f, 0f, 0f }, new float[] { 20f, 20f, 0f }, 2.5f);
