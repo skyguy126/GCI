@@ -22,7 +22,6 @@ public class Parser {
 	public Parser(String filePath) {
 
 		Configurator.defaultConfig().formatPattern(Shared.LOG_FORMAT).level(Shared.LOG_LEVEL).activate();
-
 		Logger.debug("Parser initiated");
 
 		try {
@@ -36,6 +35,14 @@ public class Parser {
 	
 	public ArrayList<ArrayList<String>> getGCodeArray() {
 		return this.gCodeArray;
+	}
+
+	public MeasurementMode getMeasurementMode() {
+		return measurementMode;
+	}
+
+	public CoordinateMode getCoordinateMode() {
+		return coordinateMode;
 	}
 
 	public boolean parse() {
