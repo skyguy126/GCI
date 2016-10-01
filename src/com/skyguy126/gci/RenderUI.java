@@ -19,6 +19,7 @@ import javax.swing.border.EmptyBorder;
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.awt.Menu;
 import java.awt.MenuBar;
 import java.awt.MenuItem;
@@ -97,15 +98,40 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	private volatile boolean takeScreenshot;
 
 	private volatile ByteBuffer screenshotBuffer;
+	private volatile ArrayList<float[][]> vertexValuesGL;
+	private volatile ArrayList<float[][]> vertexValues;
+	
+
+	private Thread animateVertexValues = new Thread() {
+		@Override
+		public void run() {
+			while (true) {
+				int loopNum = (int) (vertexValues.size() * currentTimePercent);
+				ArrayList<float[][]> temp = new ArrayList<float[][]>();
+				
+				for (int i = 0; i < loopNum; i++) {
+					temp.add(vertexValues.get(i));
+				}
+				
+				vertexValuesGL = temp;
+				
+				try {
+					Thread.sleep(17);
+				} catch (InterruptedException e) {
+
+				}
+			}
+		}
+	};
 
 	private Thread timeSliderChanger = new Thread() {
 
 		// TODO allow user to manually change time slider value
-		
+
 		@Override
 		public void run() {
 			Logger.debug("Time slider changer thread started");
-			
+
 			while (true) {
 
 				timeSlider.setValue((int) (currentTimePercent * timeSlider.getMaximum()));
@@ -197,6 +223,8 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		this.axisLockText = "Axis Lock: NA";
 		this.decreaseSensitivityText = "Dec Sensitivity: false";
 
+		this.vertexValues = new ArrayList<float[][]>();
+		this.vertexValuesGL = new ArrayList<float[][]>();
 		this.lineColor = new Color(0f, 0.4f, 1.0f);
 
 		glcaps = new GLCapabilities(GLProfile.get(GLProfile.GL2));
@@ -258,6 +286,15 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 							fileExtension = filePath.substring(extensionIndex);
 
 						if (fileExtension.equals(".nc") || fileExtension.equals(".txt")) {
+
+							// TODO error checking
+							Parser parser = new Parser(filePath);
+							parser.parse();
+							Interpreter intrp = new Interpreter(parser.getGCodeArray());
+							intrp.generateAbsolute();
+							vertexValues = intrp.getVertexValues();
+							animateVertexValues.start();
+
 							Logger.debug("Success");
 						} else {
 							Logger.warn("Invalid file type {}", fileExtension);
@@ -315,7 +352,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		timeSlider.setBorder(new EmptyBorder(0, 10, 0, 10));
 		controlPanel.add(timeSlider);
 		timeSliderChanger.start();
-		
+
 		JButton screenshotButton = new JButton("Screenshot");
 		screenshotButton.addActionListener(new ActionListener() {
 			@Override
@@ -324,7 +361,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 			}
 		});
 		controlPanel.add(screenshotButton);
-		
+
 		controlFrame.add(controlPanel);
 		logFrame.setVisible(true);
 		controlFrame.setVisible(true);
@@ -347,28 +384,16 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		gl.glTranslated(curX / 100.0, curY / -100.0, 0);
 		gl.glRotated(curAngleY, 1, 0, 0);
 		gl.glRotated(curAngleX, 0, 1, 0);
-		
+
 		// Draw coordinate axis
-		
+
 		RenderHelpers.renderLine(gl, Color.RED, new float[] { 0f, 0f, 0f }, new float[] { 40f, 0f, 0f }, 5f);
 		RenderHelpers.renderLine(gl, Color.RED, new float[] { 0f, 0f, 0f }, new float[] { 0f, 40f, 0f }, 5f);
 		RenderHelpers.renderLine(gl, Color.RED, new float[] { 0f, 0f, 0f }, new float[] { 0f, 0f, 40f }, 5f);
 
-		RenderHelpers.renderLine(gl, this.lineColor, new float[] { 0f, 0f, 0f }, new float[] { 20f, 0f, 0f }, 2.5f);
-		RenderHelpers.renderLine(gl, this.lineColor, new float[] { 20f, 0f, 0f }, new float[] { 20f, 20f, 0f }, 2.5f);
-		RenderHelpers.renderLine(gl, this.lineColor, new float[] { 20f, 20f, 0f }, new float[] { 0f, 20f, 0f }, 2.5f);
-		RenderHelpers.renderLine(gl, this.lineColor, new float[] { 0f, 20f, 0f }, new float[] { 0f, 0f, 0f }, 2.5f);
-
-		RenderHelpers.renderLine(gl, this.lineColor, new float[] { 0f, 0f, 0f }, new float[] { 0f, 0f, 20f }, 2.5f);
-		RenderHelpers.renderLine(gl, this.lineColor, new float[] { 0f, 0f, 20f }, new float[] { 20f, 0f, 20f }, 2.5f);
-		RenderHelpers.renderLine(gl, this.lineColor, new float[] { 20f, 0f, 20f }, new float[] { 20f, 0f, 0f }, 2.5f);
-
-		RenderHelpers.renderLine(gl, this.lineColor, new float[] { 0f, 0f, 20f }, new float[] { 0f, 20f, 20f }, 2.5f);
-		RenderHelpers.renderLine(gl, this.lineColor, new float[] { 0f, 20f, 20f }, new float[] { 20f, 20f, 20f }, 2.5f);
-		RenderHelpers.renderLine(gl, this.lineColor, new float[] { 20f, 20f, 20f }, new float[] { 20f, 0f, 20f }, 2.5f);
-
-		RenderHelpers.renderLine(gl, this.lineColor, new float[] { 20f, 20f, 20f }, new float[] { 20f, 20f, 0f }, 2.5f);
-		RenderHelpers.renderLine(gl, this.lineColor, new float[] { 0f, 20f, 20f }, new float[] { 0f, 20f, 0f }, 2.5f);
+		for (float[][] vertex : this.vertexValuesGL) {
+			RenderHelpers.renderLine(gl, lineColor, vertex[0], vertex[1], 2.5f);
+		}
 
 		RenderHelpers.renderText(this.textRenderer, this.axisLockText, 5, 5, this.glWidth, this.glHeight);
 		RenderHelpers.renderText(this.textRenderer, this.decreaseSensitivityText, 5, 35, this.glWidth, this.glHeight);
@@ -565,9 +590,11 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		} else if (e.getKeyCode() == KeyEvent.VK_B) {
 			takeScreenshot();
 		} else if (e.getKeyCode() == KeyEvent.VK_J) {
-			this.currentTimePercent -= 0.01;
+			if (this.currentTimePercent > 0.0)
+				this.currentTimePercent -= 0.01;
 		} else if (e.getKeyCode() == KeyEvent.VK_K) {
-			this.currentTimePercent += 0.01;
+			if (this.currentTimePercent < 1.0)
+				this.currentTimePercent += 0.01;
 		} else {
 			return;
 		}
