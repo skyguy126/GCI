@@ -12,11 +12,12 @@ public class Shared {
 	public static final Level LOG_LEVEL = (DEBUG_MODE) ? Level.DEBUG : Level.INFO;
 	
 	// TODO allow these values to be changed
-	public static double PAN_SENSITIVITY_MULTIPLIER = 10.0;
-	public static double ZOOM_SENSITIVITY_MULTIPLIER = 10.0;
-	public static double ROTATE_SENSITIVITY_MULTIPLIER = 10.0;
+	public static volatile double PAN_SENSITIVITY_MULTIPLIER = 10.0;
+	public static volatile double ZOOM_SENSITIVITY_MULTIPLIER = 10.0;
+	public static volatile double ROTATE_SENSITIVITY_MULTIPLIER = 10.0;
 	
 	public static final double DECREASE_SENSITIVITY_MULTIPLIER = 2.5;
 	
-	public static final int SEGMENT_GENERATION_MULTIPLIER = 50;
+	public static final int SEGMENT_GENERATION_MULTIPLIER = 1000;
+	public static final int SEGMENT_SCALE_MULTIPLIER = 10;
 }
