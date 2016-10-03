@@ -1,5 +1,6 @@
 package com.skyguy126.gci;
 
+import java.awt.Color;
 import java.util.ArrayList;
 import java.util.Arrays;
 
@@ -13,6 +14,7 @@ public class Interpreter {
 	private ArrayList<String> spindleSpeedText;
 	private ArrayList<String> feedRateText;
 	private ArrayList<String> currentCommandText;
+	private ArrayList<Color> color;
 
 	private float startX;
 	private float startY;
@@ -29,6 +31,7 @@ public class Interpreter {
 		this.spindleSpeedText = new ArrayList<String>();
 		this.feedRateText = new ArrayList<String>();
 		this.currentCommandText = new ArrayList<String>();
+		this.color = new ArrayList<Color>();
 
 		this.totalTicks = 0;
 
@@ -128,10 +131,13 @@ public class Interpreter {
 				for (int x = 0; x < numSegments; x++) {
 					float[][] vertexArray = new float[2][3];
 
-					// We need to flip the Y and Z coordinates and multiply Y by -1 because
-					// the XY plane is moving horizontally while the Z axis is moving vertically on a CNC
-					// The GL coordinate system uses the Y axis for vertical movement
-					
+					// We need to flip the Y and Z coordinates and multiply Y by
+					// -1 because
+					// the XY plane is moving horizontally while the Z axis is
+					// moving vertically on a CNC
+					// The GL coordinate system uses the Y axis for vertical
+					// movement
+
 					vertexArray[0][0] = lastX;
 					vertexArray[0][2] = lastY * -1;
 					vertexArray[0][1] = lastZ;
@@ -143,6 +149,12 @@ public class Interpreter {
 					vertexArray[1][0] = lastX;
 					vertexArray[1][2] = lastY * -1;
 					vertexArray[1][1] = lastZ;
+
+					if (curCmd.equals("G00")) {
+						this.color.add(Color.GREEN);
+					} else if (curCmd.equals("G01")) {
+						this.color.add(Color.BLUE);
+					}
 
 					Logger.debug("{}", Arrays.deepToString(vertexArray));
 
@@ -165,7 +177,7 @@ public class Interpreter {
 				return false;
 			}
 		}
-		
+
 		return true;
 	}
 
@@ -194,5 +206,9 @@ public class Interpreter {
 
 	public int getTotalTicks() {
 		return totalTicks;
+	}
+
+	public ArrayList<Color> getColor() {
+		return color;
 	}
 }
