@@ -1,353 +1,772 @@
 package com.skyguy126.gci;
 
+import java.awt.Color;
+import java.awt.Desktop;
+import java.awt.Dimension;
+import java.awt.Font;
+import java.awt.Frame;
+import java.awt.Graphics;
+import java.awt.GridLayout;
+import org.pmw.tinylog.LogEntry;
+
+import javax.imageio.ImageIO;
+import javax.swing.ImageIcon;
+import javax.swing.JButton;
+import javax.swing.JDialog;
+import javax.swing.JFileChooser;
+import javax.swing.JFrame;
+import javax.swing.JLabel;
+import javax.swing.JTextArea;
+import javax.swing.JOptionPane;
+import javax.swing.JPanel;
+import javax.swing.JSlider;
+import javax.swing.SwingUtilities;
+import javax.swing.border.EmptyBorder;
+import javax.swing.event.ChangeEvent;
+import javax.swing.event.ChangeListener;
+
+import java.io.File;
+import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.awt.Menu;
+import java.awt.MenuBar;
+import java.awt.MenuItem;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.awt.event.KeyEvent;
+import java.awt.event.KeyListener;
+import java.awt.event.MouseEvent;
+import java.awt.event.MouseListener;
+import java.awt.event.MouseMotionListener;
+import java.awt.event.MouseWheelEvent;
+import java.awt.event.MouseWheelListener;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
+import java.awt.image.BufferedImage;
+
 import org.pmw.tinylog.Configurator;
 import org.pmw.tinylog.Logger;
 
-import java.io.BufferedReader;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.InputStreamReader;
+import com.jogamp.opengl.GL2;
+import com.jogamp.opengl.GLAutoDrawable;
+import com.jogamp.opengl.GLCapabilities;
+import com.jogamp.opengl.GLEventListener;
+import com.jogamp.opengl.GLProfile;
+import com.jogamp.opengl.awt.GLCanvas;
+import com.jogamp.opengl.glu.GLU;
+import com.jogamp.opengl.util.Animator;
+import com.jogamp.opengl.util.awt.TextRenderer;
 
-import java.util.ArrayList;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+// TODO
+// Add console writer to log in JFrame
+// Add settings to change mouse sensitivity
+// Switch to float values in gl loop
+// Change zoom method to use FOV not glTranslate
+// Fix screenshot aspect ratio
+// Add anti-aliasing
 
-public class Parser {
+public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotionListener, MouseListener, KeyListener {
 
-	private BufferedReader fileReader;
-	private MeasurementMode measurementMode = null;
-	private CoordinateMode coordinateMode = null;
-	private ArrayList<ArrayList<String>> gCodeArray;
+	private Frame frame;
+	private MenuBar menuBar;
 
-	public Parser(String filePath) {
+	private JFrame logFrame;
+	private JTextArea logText;
+	private JFrame controlFrame;
+	private JSlider timeSlider;
+	private JButton playButton;
+	private JDialog loadingDialog;
 
-		Configurator.defaultConfig().formatPattern(Shared.LOG_FORMAT).level(Shared.LOG_LEVEL).activate();
-		Logger.debug("Parser initiated");
+	private TextRenderer textRenderer;
+	private GLCapabilities glcaps;
+	private GLCanvas glcanvas;
+	private Animator animator;
+	private GLU glu;
 
-		try {
-			this.fileReader = new BufferedReader(new InputStreamReader(new FileInputStream(filePath), "UTF-8"));
-			Logger.debug("Loaded file input");
-			this.gCodeArray = new ArrayList<ArrayList<String>>();
-		} catch (IOException e) {
-			Logger.error(e);
+	private Color lineColor;
+
+	private double lastX;
+	private double lastY;
+	private int glHeight;
+	private int glWidth;
+
+	private volatile String axisLockText;
+	private volatile String decreaseSensitivityText;
+
+	private volatile double zoomDistance;
+	private volatile double curX;
+	private volatile double curY;
+	private volatile double curAngleX;
+	private volatile double curAngleY;
+	private volatile double currentTimePercent;
+
+	private volatile boolean lockHorizAxis;
+	private volatile boolean lockVertAxis;
+	private volatile boolean decreaseSensitivity;
+	private volatile boolean takeScreenshot;
+	private volatile boolean isPlaying;
+
+	private volatile ByteBuffer screenshotBuffer;
+	private volatile ArrayList<float[][]> vertexValuesGL;
+	private volatile ArrayList<float[][]> vertexValues;
+	private volatile ArrayList<Color> curLineColor;
+	
+	private Runnable showLoadingDialog = new Runnable() {
+		@Override
+		public void run() {
+			loadingDialog.setVisible(true);
 		}
+	};
+	
+	private Runnable dismissLoadingDialog = new Runnable() {
+		@Override
+		public void run() {
+			loadingDialog.setVisible(false);
+		}
+	};
+
+	private Thread animateVertexValues = new Thread() {
+		@Override
+		public void run() {
+			Logger.debug("Vertex animation thread started");
+
+			while (true) {
+				int loopNum = (int) (vertexValues.size() * currentTimePercent);
+				ArrayList<float[][]> temp = new ArrayList<float[][]>();
+
+				for (int i = 0; i < loopNum; i++) {
+					temp.add(vertexValues.get(i));
+				}
+
+				vertexValuesGL = temp;
+
+				try {
+					Thread.sleep(17);
+				} catch (InterruptedException e) {
+					Logger.error(e);
+				}
+			}
+		}
+	};
+
+	private Thread performPlayback = new Thread() {
+		@Override
+		public void run() {
+			Logger.debug("Playback thread started");
+
+			while (true) {
+
+				if (isPlaying) {
+					Logger.debug("Playing: {}", currentTimePercent);
+
+					if (currentTimePercent < 1.0) {
+						currentTimePercent += 0.001;
+						timeSlider.setValue((int) (currentTimePercent * timeSlider.getMaximum()));
+					} else {
+						isPlaying = false;
+						playButton.setText("Play");
+						timeSlider.setEnabled(true);
+					}
+				}
+
+				try {
+					Thread.sleep(17);
+				} catch (InterruptedException e) {
+					Logger.error(e);
+				}
+			}
+		}
+	};
+
+	private class FileLoader extends Thread {
+
+		private String filePath;
+
+		public FileLoader(String f) {
+			this.filePath = f;
+		}
+
+		@Override
+		public void run() {
+			runOnNewThread(showLoadingDialog);
+			
+			Parser parser = new Parser(filePath);
+			boolean parseSuccess = parser.parse();
+			
+			if (parseSuccess) {
+				Interpreter interpreter = new Interpreter(parser.getGCodeArray());
+				boolean interpSuccess = interpreter.generateAbsolute();
+				
+				if (interpSuccess) {
+					vertexValues = interpreter.getVertexValues();
+					curLineColor = interpreter.getColor();
+					Logger.info("Loaded file!");
+					runOnNewThread(dismissLoadingDialog);
+				}
+			}
+		}
+	}
+
+	private class Screenshot extends Thread {
+
+		private ByteBuffer buffer;
+		private int height;
+		private int width;
+
+		public Screenshot(ByteBuffer b, int h, int w) {
+			this.buffer = b;
+			this.height = h;
+			this.width = w;
+		}
+
+		@Override
+		public void run() {
+
+			BufferedImage img = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+			Graphics g = img.getGraphics();
+
+			for (int h = 0; h < height; h++) {
+				for (int w = 0; w < width; w++) {
+					g.setColor(new Color(buffer.get() * 2, buffer.get() * 2, buffer.get() * 2));
+					g.drawRect(w, height - h, 1, 1);
+				}
+			}
+
+			Logger.debug("Copied bytes to buffered image");
+
+			JFileChooser fileChooser = new JFileChooser();
+			fileChooser.setDialogTitle("Save Screenshot");
+			fileChooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
+			fileChooser.setApproveButtonText("Save");
+
+			if (fileChooser.showOpenDialog(frame.getOwner()) == JFileChooser.APPROVE_OPTION) {
+				String file = fileChooser.getSelectedFile().getAbsolutePath().toString();
+
+				// If no extension is given append one
+				if (!file.endsWith(".png"))
+					file += ".png";
+				
+				Logger.debug("Save Directory: {}", file);
+
+				try {
+					ImageIO.write(img, "png", new File(file));
+				} catch (IOException e) {
+					Logger.error("Screenshot failed: {}", e);
+				}
+
+				Logger.info("Screenshot saved");
+
+			} else {
+				Logger.debug("Screenshot save cancelled");
+				return;
+			}
+
+		}
+	}
+
+	public RenderUI() {
+		Configurator.defaultConfig().writer(new Log(this)).formatPattern(Shared.LOG_FORMAT).level(Shared.LOG_LEVEL).activate();
+
+		Logger.debug("RenderUI initiated");
+
+		assert Shared.PAN_SENSITIVITY_MULTIPLIER > 0 : "Pan sensitivity must be greater than 0";
+		assert Shared.ROTATE_SENSITIVITY_MULTIPLIER > 0 : "Rotate sensitivity must be greater than 0";
+		assert Shared.ZOOM_SENSITIVITY_MULTIPLIER > 0 : "Zoom sensitivity must be greater than 0";
+
+		this.zoomDistance = 100;
+		this.curX = 0;
+		this.curY = 0;
+		this.curAngleX = 0;
+		this.curAngleY = 0;
+
+		this.lockHorizAxis = false;
+		this.lockVertAxis = false;
+		this.decreaseSensitivity = false;
+		this.takeScreenshot = false;
+		this.isPlaying = false;
+
+		this.axisLockText = "Axis Lock: NA";
+		this.decreaseSensitivityText = "Dec Sensitivity: false";
+
+		this.vertexValues = new ArrayList<float[][]>();
+		this.vertexValuesGL = new ArrayList<float[][]>();
+		this.lineColor = new Color(0f, 0.4f, 1.0f);
+		this.curLineColor = new ArrayList<Color>();
+
+		this.currentTimePercent = 1.0;
+
+		glcaps = new GLCapabilities(GLProfile.get(GLProfile.GL2));
+		glcaps.setDoubleBuffered(true);
+		glcaps.setHardwareAccelerated(true);
+
+		glcanvas = new GLCanvas(glcaps);
+		glcanvas.setSize(720, 720);
+		glcanvas.addKeyListener(this);
+		glcanvas.addMouseListener(this);
+		glcanvas.addGLEventListener(this);
+		glcanvas.addMouseWheelListener(this);
+		glcanvas.addMouseMotionListener(this);
+
+		this.glHeight = glcanvas.getHeight();
+		this.glWidth = glcanvas.getWidth();
+		this.screenshotBuffer = ByteBuffer.allocate(this.glHeight * this.glWidth * 3);
+
+		frame = new Frame("GCODE Interpreter - " + Shared.VERSION);
+		frame.setSize(800, 800);
+		frame.setResizable(false);
+		frame.add(glcanvas);
+		frame.setLocationRelativeTo(null);
+		frame.addWindowListener(new WindowAdapter() {
+			@Override
+			public void windowClosing(WindowEvent evt) {
+				exit();
+			}
+		});
+		
+		loadingDialog = new JDialog(frame, "Please Wait...", true);
+		loadingDialog.setDefaultCloseOperation(JDialog.DO_NOTHING_ON_CLOSE);
+		loadingDialog.add(new JLabel("Loading...", new ImageIcon("res/ajax-loader.gif"), JLabel.CENTER));
+		loadingDialog.setSize(new Dimension(400, 200));
+		loadingDialog.setLocationRelativeTo(null);
+
+		menuBar = new MenuBar();
+		Menu file = new Menu("File");
+		MenuItem exitMenuItem = new MenuItem("Exit");
+		exitMenuItem.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				exit();
+			}
+		});
+
+		MenuItem openMenuItem = new MenuItem("Open");
+		openMenuItem.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+
+				JFileChooser fileChooser = new JFileChooser();
+
+				if (fileChooser.showOpenDialog(frame.getOwner()) == JFileChooser.APPROVE_OPTION) {
+					File file = fileChooser.getSelectedFile();
+					if (file != null) {
+
+						String fileExtension = "";
+						String filePath = file.getAbsolutePath();
+						int extensionIndex = filePath.lastIndexOf(".");
+
+						if (extensionIndex != -1)
+							fileExtension = filePath.substring(extensionIndex);
+
+						if (fileExtension.equals(".nc") || fileExtension.equals(".txt")) {
+							FileLoader fileLoader = new FileLoader(filePath);
+							fileLoader.start();
+						} else {
+							Logger.warn("Invalid file type {}", fileExtension);
+							JOptionPane.showMessageDialog(frame, "File must be of extenstion *.nc", "Invalid File Type",
+									JOptionPane.WARNING_MESSAGE);
+						}
+
+					}
+				} else {
+					Logger.debug("File open cancelled");
+					return;
+				}
+
+			}
+		});
+
+		file.add(openMenuItem);
+		file.add(exitMenuItem);
+		
+		Menu about = new Menu("About");
+		MenuItem sourceMenuItem = new MenuItem("Source Code");
+		sourceMenuItem.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				Logger.debug("Opening source code url...");
+				
+				try {
+					Desktop.getDesktop().browse(new URI(Shared.SOURCE_CODE_URL));
+				} catch (IOException ex) {
+					Logger.error(ex);
+				} catch (URISyntaxException ex) {
+					Logger.error(ex);
+				}
+			}
+		});
+		about.add(sourceMenuItem);
+		
+		MenuItem infoMenuItem = new MenuItem("Information");
+		about.add(infoMenuItem);
+		
+		menuBar.add(file);
+		menuBar.add(about);
+		frame.setMenuBar(menuBar);
+
+		logFrame = new JFrame("Log");
+		logFrame.setSize(400, 800);
+		logFrame.setResizable(false);
+		logFrame.setLocation((int) frame.getLocation().getX() + 800, (int) frame.getLocation().getY());
+		logFrame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+
+
+		controlFrame = new JFrame("Controls");
+		controlFrame.setSize(400, 800);
+		controlFrame.setResizable(false);
+		controlFrame.setLocation((int) frame.getLocation().getX() - 400, (int) frame.getLocation().getY());
+		controlFrame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+
+		JPanel controlPanel = new JPanel(new GridLayout(6, 0));
+		playButton = new JButton("Play");
+		playButton.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				if (!isPlaying) {
+					if (currentTimePercent >= 1.0) {
+						currentTimePercent = 0.0;
+					}
+					isPlaying = true;
+					playButton.setText("Stop");
+					timeSlider.setEnabled(false);
+				} else {
+					isPlaying = false;
+					playButton.setText("Play");
+					timeSlider.setEnabled(true);
+				}
+			}
+		});
+		controlPanel.add(playButton);
+
+		timeSlider = new JSlider(JSlider.HORIZONTAL, 0, 1000, 0);
+		timeSlider.setMajorTickSpacing(100);
+		timeSlider.setMinorTickSpacing(10);
+		timeSlider.setPaintTicks(true);
+		timeSlider.setBorder(new EmptyBorder(0, 10, 0, 10));
+		timeSlider.setValue(timeSlider.getMaximum() - 1);
+		timeSlider.addChangeListener(new ChangeListener() {
+			@Override
+			public void stateChanged(ChangeEvent e) {
+				currentTimePercent = (double) timeSlider.getValue() / (double) timeSlider.getMaximum();
+				Logger.debug("Time slider value changed {}", currentTimePercent);
+			}
+		});
+		controlPanel.add(timeSlider);
+
+		JButton screenshotButton = new JButton("Screenshot");
+		screenshotButton.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				takeScreenshot();
+			}
+		});
+		controlPanel.add(screenshotButton);
+
+		this.performPlayback.start();
+		this.animateVertexValues.start();
+
+		controlFrame.add(controlPanel);
+		logFrame.setVisible(true);
+		controlFrame.setVisible(true);
+		frame.setVisible(true);
+		frame.requestFocus();
+	}
+
+	@Override
+	public void display(GLAutoDrawable glad) {
+		GL2 gl = glad.getGL().getGL2();
+		gl.glClear(GL2.GL_COLOR_BUFFER_BIT | GL2.GL_DEPTH_BUFFER_BIT);
+		setCamera(gl, glu);
+		gl.glTranslated(curX / 100.0, curY / -100.0, 0);
+		gl.glRotated(curAngleY, 1, 0, 0);
+		gl.glRotated(curAngleX, 0, 1, 0);
+
+		// Draw coordinate axis
+		RenderHelpers.renderLine(gl, Color.RED, new float[] { 0f, 0f, 0f }, new float[] { 40f, 0f, 0f }, 5f);
+		RenderHelpers.renderLine(gl, Color.RED, new float[] { 0f, 0f, 0f }, new float[] { 0f, 40f, 0f }, 5f);
+		RenderHelpers.renderLine(gl, Color.RED, new float[] { 0f, 0f, 0f }, new float[] { 0f, 0f, -40f }, 5f);
+		
+		for(int i = 0; i < this.vertexValuesGL.size(); i++) {
+			RenderHelpers.renderLine(gl, this.curLineColor.get(i), this.vertexValuesGL.get(i)[0], this.vertexValuesGL.get(i)[1], 2.5f);
+		}
+
+		RenderHelpers.renderText(this.textRenderer, this.axisLockText, 5, 5, this.glWidth, this.glHeight);
+		RenderHelpers.renderText(this.textRenderer, this.decreaseSensitivityText, 5, 35, this.glWidth, this.glHeight);
+
+		if (this.takeScreenshot) {
+			Logger.info("Taking screenshot...");
+			this.takeScreenshot = false;
+			this.screenshotBuffer.clear();
+			gl.glReadPixels(0, 0, this.glWidth, this.glHeight, GL2.GL_RGB, GL2.GL_BYTE, this.screenshotBuffer);
+			Screenshot s = new Screenshot(this.screenshotBuffer, this.glHeight, this.glWidth);
+			s.start();
+		}
+
+		gl.glFlush();
+	}
+
+	@Override
+	public void dispose(GLAutoDrawable glad) {
+		// TODO Auto-generated method stub
+
+	}
+
+	@Override
+	public void init(GLAutoDrawable glad) {
+		Logger.debug("OpenGL init");
+
+		GL2 gl = glad.getGL().getGL2();
+		textRenderer = new TextRenderer(new Font("Roboto", Font.PLAIN, 30));
+		glu = new GLU();
+
+		gl.glEnable(GL2.GL_DEPTH_TEST);
+		gl.glDepthFunc(GL2.GL_LEQUAL);
+		gl.glShadeModel(GL2.GL_SMOOTH);
+		gl.glHint(GL2.GL_PERSPECTIVE_CORRECTION_HINT, GL2.GL_NICEST);
+		gl.glEnable(GL2.GL_LINE_SMOOTH);
+		gl.glEnable(GL2.GL_BLEND);
+		gl.glBlendFunc(GL2.GL_SRC_ALPHA, GL2.GL_ONE_MINUS_SRC_ALPHA);
+		gl.glHint (GL2.GL_LINE_SMOOTH_HINT, GL2.GL_NICEST);
+		gl.glClearColor(0f, 0f, 0f, 1f);
+		gl.setSwapInterval((Shared.VSYNC) ? 1 : 0);
+
+		setCamera(gl, glu);
+
+		animator = new Animator(glcanvas);
+		animator.start();
+	}
+
+	@Override
+	public void reshape(GLAutoDrawable glad, int x, int y, int width, int height) {
+		GL2 gl = glad.getGL().getGL2();
+		gl.glViewport(x, y, width, height);
+
+		Logger.debug("GL reshape");
+	}
+
+	public void setCamera(GL2 gl, GLU glu) {
+		gl.glMatrixMode(GL2.GL_PROJECTION);
+		gl.glLoadIdentity();
+
+		float widthHeightRatio = (float) glcanvas.getWidth() / (float) glcanvas.getHeight();
+		glu.gluPerspective(45, widthHeightRatio, 1, 1000);
+		glu.gluLookAt(0, 0, zoomDistance, 0, 0, 0, 0, 1, 0);
+
+		gl.glMatrixMode(GL2.GL_MODELVIEW);
+		gl.glLoadIdentity();
 	}
 	
-	public ArrayList<ArrayList<String>> getGCodeArray() {
-		return this.gCodeArray;
+	public void runOnNewThread(Runnable r) {
+		(new Thread() {
+			@Override
+			public void run() {
+				r.run();
+			}
+		}).start();
 	}
 
-	public MeasurementMode getMeasurementMode() {
-		return measurementMode;
+	public void exit() {
+		Logger.debug("Window closing...");
+
+		if (animator != null)
+			animator.stop();
+
+		frame.remove(glcanvas);
+		frame.dispose();
+		System.exit(0);
 	}
 
-	public CoordinateMode getCoordinateMode() {
-		return coordinateMode;
+	public void resetCamera() {
+		this.zoomDistance = 100;
+		this.curAngleX = 0;
+		this.curAngleY = 0;
+		this.curX = 0;
+		this.curY = 0;
 	}
 
-	public boolean parse() {
+	public double getDecreaseSensitivityMultiplier() {
+		return ((decreaseSensitivity) ? Shared.DECREASE_SENSITIVITY_MULTIPLIER : 1);
+	}
 
-		boolean valid = true;
+	public void takeScreenshot() {
+		this.takeScreenshot = true;
+	}
 
-		try {
+	@Override
+	public void mouseWheelMoved(MouseWheelEvent e) {
 
-			// Remove the byte order mark from start of file
-			this.fileReader.mark(1);
-			if (this.fileReader.read() != 0xFEFF)
-				this.fileReader.reset();
+		if (e.getWheelRotation() == -1) {
+			if (this.zoomDistance > 10)
+				this.zoomDistance -= (Shared.ZOOM_SENSITIVITY_MULTIPLIER / getDecreaseSensitivityMultiplier());
 			else
-				Logger.debug("Removed byte order mark from filestream");
-
-			String currentLine;
-			int lineNum = 0;
-
-			// Loop through each line of file
-			while ((currentLine = this.fileReader.readLine()) != null) {
-
-				lineNum++;
-				
-				// Check for proper comment syntax and remove comments
-				if (currentLine.contains("(")) {
-					currentLine = currentLine.substring(0, currentLine.indexOf("(")) + "\n";
-				} else if (currentLine.contains(")") && !currentLine.contains("(")) {
-					Logger.error("Invalid comment syntax at line {}", lineNum);
-					valid = false;
-					break;
-				}
-
-				// Skip over any blank lines
-				if (currentLine.trim().isEmpty()) {
-					Logger.warn("Empty line at line {}", lineNum);
-					continue;
-				}
-
-				// Initialize array for loop
-				ArrayList<String> cmdList = new ArrayList<String>();
-
-				// Boolean operations are faster than string comparisons so we
-				// use short circuit evaluation
-				boolean lastCmdExists = false;
-
-				// we cannot use valid for this because even if we find an error
-				// we want to check the rest of the file
-				boolean loopExit = false;
-
-				// We don't want duplicate x/y/z coordinates
-				boolean xExists = false;
-				boolean yExists = false;
-				boolean zExists = false;
-				boolean iExists = false;
-				boolean jExists = false;
-
-				// Keep track of commands that need arguments
-				String lastCmd = "";
-
-				// Keep track of the command block number
-				int cmdNum = -1;
-
-				Logger.debug("Entering loop for line {}", lineNum);
-
-				// Remove \n and double spaces before processing
-				for (String x : currentLine.replaceAll("\n", "").replaceAll("\\s+", " ").split(" ")) {
-					// Trim trailing whitespace and increment command number
-					x = x.trim();
-					cmdNum++;
-
-					// Assert N tag at start of line
-					if (cmdNum == 0 && !Pattern.compile("[N]\\d+").matcher(x).matches()) {
-						Logger.error("Invalid N tag at line {}", lineNum);
-						valid = false;
-						break;
-					} else if (cmdNum == 1) {
-						// Command following N tag MUST be G or M
-
-						Matcher mg = Pattern.compile("[G]\\d+").matcher(x);
-						Matcher mm = Pattern.compile("[M]\\d+").matcher(x);
-
-						if (!mg.matches() && !mm.matches()) {
-							Logger.error("Syntax error on line {}. N tag must be followed by a proper G or M tag",
-									lineNum);
-							valid = false;
-							break;
-						}
-					}
-
-					// No need to process the N tag, ignoring that anyways
-					if (cmdNum == 0) {
-						continue;
-					}
-
-					// Last command was M03 to start spindle and we need to get
-					// spindle speed
-					if (lastCmdExists && lastCmd.equals("M03")) {
-						if (Pattern.compile("[S]\\d+").matcher(x).matches()) {
-							Logger.debug("Found S value: {}", x);
-							cmdList.add(x);
-							lastCmdExists = false;
-							lastCmd = "";
-							continue;
-						} else {
-							Logger.error("M03 must be followed by S tag indicating spindle speed on line {}", lineNum);
-							valid = false;
-							break;
-						}
-					}
-
-					if (lastCmdExists && (lastCmd.equals("G00") || lastCmd.equals("G01") || lastCmd.equals("G02")
-							|| lastCmd.equals("G03"))) {
-
-						// Search for X Y Z and F tags following G00 and G01
-
-						if (Pattern.compile("[XYZ]([-])?\\d+([.]\\d+)?").matcher(x).matches()) {
-							
-							Logger.debug("Detected coordinate value: {}", x);
-
-							// Make sure coordinate can only be defined once on
-							// one line
-							if (!xExists && x.startsWith("X")) {
-								xExists = true;
-							} else if (!yExists && x.startsWith("Y")) {
-								yExists = true;
-							} else if (!zExists && x.startsWith("Z")) {
-								zExists = true;
-							} else {
-								Logger.error("X Y or Z can only be defined once on line {}", lineNum);
-								valid = false;
-								break;
-							}
-
-							cmdList.add(x);
-							continue;
-							
-						} else if (Pattern.compile("[IJ]([-])?\\d+([.]\\d+)?").matcher(x).matches()) {
-							
-							Logger.debug("Detected coordinate value for arc: {}", x);
-
-							if (!iExists && x.startsWith("I")) {
-								iExists = true;
-							} else if (!jExists && x.startsWith("J")) {
-								jExists = true;
-							} else {
-								Logger.error("I or J can only be defined once on line {}", lineNum);
-								valid = false;
-								break;
-							}
-
-							cmdList.add(x);
-							continue;
-
-						} else if (Pattern.compile("[F]\\d+").matcher(x).matches()) {
-							
-							Logger.debug("Detected F value: {}", x);
-							cmdList.add(x);
-							continue;
-							
-						} else {
-							
-							Logger.error("Syntax error on line {}", lineNum);
-							valid = false;
-							break;
-							
-						}
-					}
-
-					switch (x) {
-					case "G04":
-					case "G05":
-					case "G80":
-					case "G81":
-					case "G82":
-					case "M00":
-					case "M01":
-					case "M06":
-					case "M08":
-					case "M09":
-					case "M10":
-					case "M11":
-					case "M30":
-					case "M47":
-					case "M02":
-						break;
-					case "G20":
-						if (measurementMode == null) {
-							measurementMode = MeasurementMode.INCH;
-							Logger.debug("Measurement mode: inch");
-						} else {
-							Logger.error("Measurement mode can only be defined once");
-							valid = false;
-							loopExit = true;
-						}
-						break;
-					case "G21":
-						if (measurementMode == null) {
-							measurementMode = MeasurementMode.MILLIMETER;
-							Logger.debug("Measurement mode: millimeter");
-						} else {
-							Logger.error("Measurement mode can only be defined once");
-							valid = false;
-							loopExit = true;
-						}
-						break;
-					case "G90":
-						if (coordinateMode == null) {
-							coordinateMode = CoordinateMode.ABSOLUTE;
-							Logger.debug("Coordinate mode: absolute");
-						} else {
-							Logger.error("Coordinate mode can only be defined once");
-							valid = false;
-							loopExit = true;
-						}
-						break;
-					case "G91":
-						if (coordinateMode == null) {
-							coordinateMode = CoordinateMode.RELATIVE;
-							Logger.debug("Coordinate mode: relative");
-						} else {
-							Logger.error("Coordinate mode can only be defined once");
-							valid = false;
-							loopExit = true;
-						}
-						break;
-					case "M05":
-						cmdList.add(x);
-						break;
-					case "M03":
-					case "G00":
-					case "G01":
-					case "G02":
-					case "G03":
-						cmdList.add(x);
-						lastCmdExists = true;
-						lastCmd = x;
-						break;
-					default:
-						Logger.error("Invalid code on line {} block {}", lineNum, cmdNum);
-						valid = false;
-						loopExit = true;
-						break;
-					}
-
-					// Exit loop if 1 command block on a line is invalid
-					if (loopExit) {
-						break;
-					}
-
-				}
-
-				// Make sure X Y or Z tag was given for G00 and G01
-				if (lastCmdExists && (lastCmd.equals("G00") || lastCmd.equals("G01"))) {
-					if (!(xExists || yExists || zExists) || (iExists || jExists)) {
-						Logger.error("{} must be supplied with X Y or Z tag on line {}", lastCmd, lineNum);
-						valid = false;
-					}
-				}
-
-				// Make sure I and J tag was given for G02 and G03
-				if (lastCmdExists && (lastCmd.equals("G02") || lastCmd.equals("G03"))) {
-					if (zExists || !(iExists && jExists)) {
-						Logger.error("{} must be supplied with I and J tag on line {}", lastCmd, lineNum);
-						valid = false;
-					}
-				}
-
-				// Add current line to main gcode array if command is valid
-				if (valid && !cmdList.isEmpty()) {
-					Logger.debug("Command list for line {}: {}", lineNum, cmdList.toString());
-					gCodeArray.add(cmdList);
-				}
-			}
-
-			this.fileReader.close();
-
-			if (coordinateMode == null) {
-				Logger.error("Coordinate mode not defined!");
-				valid = false;
-			}
-
-			if (measurementMode == null) {
-				Logger.error("Measurement mode not defined!");
-				valid = false;
-			}
-
-			if (valid)
-				Logger.info("Parse success!");
+				this.zoomDistance = 10;
+		} else {
+			if (this.zoomDistance < 300)
+				this.zoomDistance += (Shared.ZOOM_SENSITIVITY_MULTIPLIER / getDecreaseSensitivityMultiplier());
 			else
-				Logger.error("Parse failed!");
-
-			if (Shared.DEBUG_MODE) {
-				System.out.println("\n\nCODE ARRAY\n");
-
-				for (ArrayList<String> line : gCodeArray) {
-					Logger.debug("----- {} -----", line.toString());
-				}
-
-				System.out.println("\n\n\n");
-			}
-
-			return valid;
-		} catch (IOException e) {
-			Logger.error(e);
-			return false;
+				this.zoomDistance = 300;
 		}
+
+		Logger.debug("Zoom - {}", this.zoomDistance);
+	}
+
+	@Override
+	public void mouseDragged(MouseEvent e) {
+
+		double dx = (e.getX() - lastX) * Shared.PAN_SENSITIVITY_MULTIPLIER;
+		double dy = (e.getY() - lastY) * Shared.PAN_SENSITIVITY_MULTIPLIER;
+
+		if (SwingUtilities.isMiddleMouseButton(e)) {
+
+			// Camera panning
+
+			if (lockHorizAxis) {
+				curX += (dx / getDecreaseSensitivityMultiplier());
+			} else if (lockVertAxis) {
+				curY += (dy / getDecreaseSensitivityMultiplier());
+			} else {
+				curX += (dx / getDecreaseSensitivityMultiplier());
+				curY += (dy / getDecreaseSensitivityMultiplier());
+			}
+
+			// TODO use robot to move mouse back to original position
+
+			Logger.debug("Drag - dx: {} dy: {}", dx, dy);
+
+		} else if (SwingUtilities.isLeftMouseButton(e)) {
+
+			// Rotate camera here
+
+			double thetadx = Math.atan((double) dx / 100.0);
+			double thetady = Math.atan((double) dy / 100.0);
+
+			// TODO reset angle if over 2pi
+
+			if (lockHorizAxis) {
+				curAngleX += (thetadx) * (Shared.ROTATE_SENSITIVITY_MULTIPLIER / getDecreaseSensitivityMultiplier());
+			} else if (lockVertAxis) {
+				curAngleY += (thetady) * (Shared.ROTATE_SENSITIVITY_MULTIPLIER / getDecreaseSensitivityMultiplier());
+			} else {
+				curAngleX += (thetadx) * (Shared.ROTATE_SENSITIVITY_MULTIPLIER / getDecreaseSensitivityMultiplier());
+
+				curAngleY += (thetady) * (Shared.ROTATE_SENSITIVITY_MULTIPLIER / getDecreaseSensitivityMultiplier());
+			}
+
+			Logger.debug("Rotate - curAngleX: {} curAngleY: {}", curAngleX, curAngleY);
+		}
+
+		lastX = e.getX();
+		lastY = e.getY();
+	}
+
+	@Override
+	public void mousePressed(MouseEvent e) {
+		if (SwingUtilities.isMiddleMouseButton(e))
+			Logger.debug("Drag started");
+		else if (SwingUtilities.isLeftMouseButton(e))
+			Logger.debug("Rotate started");
+		else
+			return;
+
+		lastX = e.getX();
+		lastY = e.getY();
+	}
+
+	@Override
+	public void mouseReleased(MouseEvent e) {
+		if (SwingUtilities.isMiddleMouseButton(e))
+			Logger.debug("Drag ended");
+		else if (SwingUtilities.isLeftMouseButton(e))
+			Logger.debug("Rotate ended");
+		else
+			return;
+	}
+
+	@Override
+	public void keyPressed(KeyEvent e) {
+		if (!lockHorizAxis && e.getKeyCode() == KeyEvent.VK_Z) {
+			lockHorizAxis = true;
+			this.axisLockText = "Axis Lock: X";
+		} else if (!lockVertAxis && e.getKeyCode() == KeyEvent.VK_X && !lockHorizAxis) {
+			lockVertAxis = true;
+			this.axisLockText = "Axis Lock: Y";
+		} else if (!decreaseSensitivity && e.getKeyCode() == KeyEvent.VK_C) {
+			decreaseSensitivity = true;
+			this.decreaseSensitivityText = "Dec Sensitivity: true";
+		} else if (e.getKeyCode() == KeyEvent.VK_V) {
+			resetCamera();
+		} else if (e.getKeyCode() == KeyEvent.VK_B) {
+			takeScreenshot();
+		} else {
+			return;
+		}
+
+		Logger.debug("Key pressed: {}", e.getKeyChar());
+	}
+
+	@Override
+	public void keyReleased(KeyEvent e) {
+
+		// TODO axis lock text resets if both buttons are pressed and released
+
+		if (lockHorizAxis && e.getKeyCode() == KeyEvent.VK_Z) {
+			lockHorizAxis = false;
+			this.axisLockText = "Axis Lock: N/A";
+		} else if (lockVertAxis && e.getKeyCode() == KeyEvent.VK_X) {
+			lockVertAxis = false;
+			this.axisLockText = "Axis Lock: N/A";
+		} else if (decreaseSensitivity && e.getKeyCode() == KeyEvent.VK_C) {
+			decreaseSensitivity = false;
+			this.decreaseSensitivityText = "Dec Sensitivity: false";
+		} else {
+			return;
+		}
+
+		Logger.debug("Key released: {}", e.getKeyChar());
+	}
+
+	@Override
+	public void mouseClicked(MouseEvent arg0) {
+		// TODO Auto-generated method stub
+
+	}
+
+	@Override
+	public void mouseEntered(MouseEvent arg0) {
+		// TODO Auto-generated method stub
+
+	}
+
+	@Override
+	public void mouseExited(MouseEvent arg0) {
+		// TODO Auto-generated method stub
+
+	}
+
+	@Override
+	public void mouseMoved(MouseEvent e) {
+		// TODO Auto-generated method stub
+
+	}
+
+	@Override
+	public void keyTyped(KeyEvent e) {
+		// TODO Auto-generated method stub
+
+	}
+
+	
+	public void appendToLog(LogEntry logData){
+		logText.append(logData + "\n");
+	}
+	
+	public void appendToLog(String logData){
+		logText.append(logData + "\n");
+	}
+	
+	public static void main(String[] args) {
+		new RenderUI();
 	}
 }
