@@ -65,13 +65,7 @@ public class Parser {
 			while ((currentLine = this.fileReader.readLine()) != null) {
 
 				lineNum++;
-
-				// Skip over any blank lines
-				if (currentLine.trim().isEmpty()) {
-					Logger.warn("Empty line at line {}", lineNum);
-					continue;
-				}
-
+				
 				// Check for proper comment syntax and remove comments
 				if (currentLine.contains("(")) {
 					currentLine = currentLine.substring(0, currentLine.indexOf("(")) + "\n";
@@ -79,6 +73,12 @@ public class Parser {
 					Logger.error("Invalid comment syntax at line {}", lineNum);
 					valid = false;
 					break;
+				}
+
+				// Skip over any blank lines
+				if (currentLine.trim().isEmpty()) {
+					Logger.warn("Empty line at line {}", lineNum);
+					continue;
 				}
 
 				// Initialize array for loop
