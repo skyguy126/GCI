@@ -110,6 +110,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	private volatile ByteBuffer screenshotBuffer;
 	private volatile ArrayList<float[][]> vertexValuesGL;
 	private volatile ArrayList<float[][]> vertexValues;
+	private volatile ArrayList<Color> curLineColor;
 	
 	private Runnable showLoadingDialog = new Runnable() {
 		@Override
@@ -199,6 +200,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 				
 				if (interpSuccess) {
 					vertexValues = interpreter.getVertexValues();
+					curLineColor = interpreter.getColor();
 					Logger.info("Loaded file!");
 					runOnNewThread(dismissLoadingDialog);
 				}
@@ -290,6 +292,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		this.vertexValues = new ArrayList<float[][]>();
 		this.vertexValuesGL = new ArrayList<float[][]>();
 		this.lineColor = new Color(0f, 0.4f, 1.0f);
+		this.curLineColor = new ArrayList<Color>();
 
 		this.currentTimePercent = 1.0;
 
@@ -481,9 +484,9 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		RenderHelpers.renderLine(gl, Color.RED, new float[] { 0f, 0f, 0f }, new float[] { 40f, 0f, 0f }, 5f);
 		RenderHelpers.renderLine(gl, Color.RED, new float[] { 0f, 0f, 0f }, new float[] { 0f, 40f, 0f }, 5f);
 		RenderHelpers.renderLine(gl, Color.RED, new float[] { 0f, 0f, 0f }, new float[] { 0f, 0f, -40f }, 5f);
-
-		for (float[][] vertex : this.vertexValuesGL) {
-			RenderHelpers.renderLine(gl, lineColor, vertex[0], vertex[1], 2.5f);
+		
+		for(int i = 0; i < this.vertexValuesGL.size(); i++) {
+			RenderHelpers.renderLine(gl, this.curLineColor.get(i), this.vertexValuesGL.get(i)[0], this.vertexValuesGL.get(i)[1], 2.5f);
 		}
 
 		RenderHelpers.renderText(this.textRenderer, this.axisLockText, 5, 5, this.glWidth, this.glHeight);
