@@ -5,6 +5,7 @@ import org.pmw.tinylog.Level;
 public class Shared {
 	public static final String LOG_FORMAT = "{date} - {level}: {message}";
 	public static final String VERSION = "v1.0";
+	public static final String SOURCE_CODE_URL = "https://github.com/skyguy126/GCI";
 	
 	public static final boolean DEBUG_MODE = true;
 	public static final boolean VSYNC = true;
@@ -18,6 +19,6 @@ public class Shared {
 	
 	public static final double DECREASE_SENSITIVITY_MULTIPLIER = 2.5;
 	
-	public static final int SEGMENT_GENERATION_MULTIPLIER = 1000;
+	public static final int SEGMENT_GENERATION_MULTIPLIER = 50;
 	public static final int SEGMENT_SCALE_MULTIPLIER = 10;
 }

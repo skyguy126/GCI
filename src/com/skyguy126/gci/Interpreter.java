@@ -37,7 +37,7 @@ public class Interpreter {
 		this.startZ = 0;
 	}
 
-	public void generateAbsolute() {
+	public boolean generateAbsolute() {
 
 		// Keep track of current commands and other text that needs to be
 		// displayed in opengl
@@ -128,17 +128,21 @@ public class Interpreter {
 				for (int x = 0; x < numSegments; x++) {
 					float[][] vertexArray = new float[2][3];
 
+					// We need to flip the Y and Z coordinates and multiply Y by -1 because
+					// the XY plane is moving horizontally while the Z axis is moving vertically on a CNC
+					// The GL coordinate system uses the Y axis for vertical movement
+					
 					vertexArray[0][0] = lastX;
-					vertexArray[0][1] = lastY;
-					vertexArray[0][2] = lastZ;
+					vertexArray[0][2] = lastY * -1;
+					vertexArray[0][1] = lastZ;
 
 					lastX += xSegmentLength;
 					lastY += ySegmentLength;
 					lastZ += zSegmentLength;
 
 					vertexArray[1][0] = lastX;
-					vertexArray[1][1] = lastY;
-					vertexArray[1][2] = lastZ;
+					vertexArray[1][2] = lastY * -1;
+					vertexArray[1][1] = lastZ;
 
 					Logger.debug("{}", Arrays.deepToString(vertexArray));
 
@@ -158,9 +162,11 @@ public class Interpreter {
 				break;
 			default:
 				Logger.error("Error at command {}", curCmd);
-				return;
+				return false;
 			}
 		}
+		
+		return true;
 	}
 
 	// Set start position or use default value of 0
