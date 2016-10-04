@@ -14,7 +14,7 @@ public class Interpreter {
 	private ArrayList<String> spindleSpeedText;
 	private ArrayList<String> feedRateText;
 	private ArrayList<String> currentCommandText;
-	private ArrayList<Color> color;
+	private ArrayList<Color> currentLineColor;
 
 	private float startX;
 	private float startY;
@@ -23,7 +23,6 @@ public class Interpreter {
 	private int totalTicks;
 
 	public Interpreter(ArrayList<ArrayList<String>> g) {
-		Configurator.defaultConfig().formatPattern(Shared.LOG_FORMAT).level(Shared.LOG_LEVEL).activate();
 		Logger.debug("Interpreter initiated");
 
 		this.gCodeArray = g;
@@ -31,7 +30,7 @@ public class Interpreter {
 		this.spindleSpeedText = new ArrayList<String>();
 		this.feedRateText = new ArrayList<String>();
 		this.currentCommandText = new ArrayList<String>();
-		this.color = new ArrayList<Color>();
+		this.currentLineColor = new ArrayList<Color>();
 
 		this.totalTicks = 0;
 
@@ -151,18 +150,18 @@ public class Interpreter {
 					vertexArray[1][1] = lastZ;
 
 					if (curCmd.equals("G00")) {
-						this.color.add(Color.GREEN);
+						this.currentLineColor.add(Color.GREEN);
 					} else if (curCmd.equals("G01")) {
-						this.color.add(Color.BLUE);
+						this.currentLineColor.add(Color.BLUE);
 					}
 
 					Logger.debug("{}", Arrays.deepToString(vertexArray));
 
 					// Add values to main vertex array
 					this.vertexValues.add(vertexArray);
-					this.feedRateText.add(curFeedRateText);
-					this.spindleSpeedText.add(curSpindleSpeedText);
-					this.currentCommandText.add(curCmd);
+					this.feedRateText.add("Feed Rate: " + curFeedRateText);
+					this.spindleSpeedText.add("Spindle Speed: " + curSpindleSpeedText);
+					this.currentCommandText.add("Current Command: " + curCmd);
 				}
 
 				Logger.debug("---------- END VERTEX ARRAY ----------");
@@ -177,6 +176,10 @@ public class Interpreter {
 				return false;
 			}
 		}
+		
+		Logger.debug("Vertex array size {}", this.vertexValues.size());
+		Logger.debug("Current command array size {}", this.currentCommandText.size());
+		Logger.debug("Current command array at 0 {}", this.currentCommandText.get(0));
 
 		return true;
 	}
@@ -208,7 +211,7 @@ public class Interpreter {
 		return totalTicks;
 	}
 
-	public ArrayList<Color> getColor() {
-		return color;
+	public ArrayList<Color> getCurrentLineColor() {
+		return currentLineColor;
 	}
 }

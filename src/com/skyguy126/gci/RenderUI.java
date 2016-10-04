@@ -1,5 +1,6 @@
 package com.skyguy126.gci;
 
+import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Desktop;
 import java.awt.Dimension;
@@ -17,7 +18,9 @@ import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JScrollPane;
 import javax.swing.JSlider;
+import javax.swing.JTextArea;
 import javax.swing.SwingUtilities;
 import javax.swing.border.EmptyBorder;
 import javax.swing.event.ChangeEvent;
@@ -66,7 +69,7 @@ import com.jogamp.opengl.util.awt.TextRenderer;
 // Fix screenshot aspect ratio
 // Add anti-aliasing
 
-public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotionListener, MouseListener, KeyListener {
+public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotionListener, MouseListener, KeyListener, LogWriter {
 
 	private Frame frame;
 	private MenuBar menuBar;
@@ -76,15 +79,16 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	private JSlider timeSlider;
 	private JButton playButton;
 	private JDialog loadingDialog;
+	private JDialog parseErrorDialog;
+	private JTextArea logTextArea;
 
 	private TextRenderer textRenderer;
+	private TextRenderer textRenderer3D;
 	private GLCapabilities glcaps;
 	private GLCanvas glcanvas;
 	private Animator animator;
 	private GLU glu;
-
-	private Color lineColor;
-
+	
 	private double lastX;
 	private double lastY;
 
@@ -112,6 +116,10 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	private volatile ArrayList<float[][]> vertexValues;
 	private volatile ArrayList<Color> curLineColor;
 	
+	private ArrayList<String> spindleSpeedText;
+	private ArrayList<String> feedRateText;
+	private ArrayList<String> currentCommandText;
+	
 	private Runnable showLoadingDialog = new Runnable() {
 		@Override
 		public void run() {
@@ -123,6 +131,12 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		@Override
 		public void run() {
 			loadingDialog.setVisible(false);
+		}
+	};
+	private Runnable showParseErrorDialog = new Runnable() {
+		@Override
+		public void run() {
+			parseErrorDialog.setVisible(true);
 		}
 	};
 
@@ -191,20 +205,37 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		public void run() {
 			runOnNewThread(showLoadingDialog);
 			
+			if (Shared.DEBUG_MODE) {
+				try {
+					Thread.sleep(1000);
+				} catch (InterruptedException e) {
+					Logger.error(e);
+				}
+			}
+			
 			Parser parser = new Parser(filePath);
 			boolean parseSuccess = parser.parse();
+			boolean interpSuccess = false;
 			
 			if (parseSuccess) {
 				Interpreter interpreter = new Interpreter(parser.getGCodeArray());
-				boolean interpSuccess = interpreter.generateAbsolute();
+				interpSuccess = interpreter.generateAbsolute();
 				
 				if (interpSuccess) {
 					vertexValues = interpreter.getVertexValues();
-					curLineColor = interpreter.getColor();
+					curLineColor = interpreter.getCurrentLineColor();
+					feedRateText = interpreter.getFeedRateText();
+					currentCommandText = interpreter.getCurrentCommandText();
+					spindleSpeedText = interpreter.getSpindleSpeedText();
+					
 					Logger.info("Loaded file!");
 					runOnNewThread(dismissLoadingDialog);
 				}
 			}
+			
+			runOnNewThread(dismissLoadingDialog);
+			if (!parseSuccess || !interpSuccess)
+				runOnNewThread(showParseErrorDialog);
 		}
 	}
 
@@ -266,7 +297,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	}
 
 	public RenderUI() {
-		Configurator.defaultConfig().formatPattern(Shared.LOG_FORMAT).level(Shared.LOG_LEVEL).activate();
+		Configurator.defaultConfig().writer(new LogController(this)).formatPattern(Shared.LOG_FORMAT).level(Shared.LOG_LEVEL).activate();
 
 		Logger.debug("RenderUI initiated");
 
@@ -291,8 +322,10 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 
 		this.vertexValues = new ArrayList<float[][]>();
 		this.vertexValuesGL = new ArrayList<float[][]>();
-		this.lineColor = new Color(0f, 0.4f, 1.0f);
 		this.curLineColor = new ArrayList<Color>();
+		this.spindleSpeedText = new ArrayList<String>();
+		this.feedRateText = new ArrayList<String>();
+		this.currentCommandText = new ArrayList<String>();
 
 		this.currentTimePercent = 1.0;
 
@@ -329,6 +362,27 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		loadingDialog.add(new JLabel("Loading...", new ImageIcon("res/ajax-loader.gif"), JLabel.CENTER));
 		loadingDialog.setSize(new Dimension(400, 200));
 		loadingDialog.setLocationRelativeTo(null);
+		
+		parseErrorDialog = new JDialog(frame, "Error", true);
+		JPanel parseErrorDialogMessagePane = new JPanel();
+		JPanel parseErrorDialogButtonPane = new JPanel();
+		
+		parseErrorDialogMessagePane.add(new JLabel("Error loading file. See log for more details.", JLabel.CENTER));
+		
+		JButton parseErrorDialogButton = new JButton("Ok");
+		parseErrorDialogButton.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				parseErrorDialog.setVisible(false);
+			}
+		});
+		parseErrorDialogButtonPane.add(parseErrorDialogButton);
+		
+		parseErrorDialog.add(parseErrorDialogMessagePane);
+		parseErrorDialog.add(parseErrorDialogButtonPane,  BorderLayout.SOUTH);
+		parseErrorDialog.setSize(new Dimension(400, 200));
+		parseErrorDialog.setLocationRelativeTo(null);
+		parseErrorDialog.pack();
 
 		menuBar = new MenuBar();
 		Menu file = new Menu("File");
@@ -409,7 +463,26 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		logFrame.setResizable(false);
 		logFrame.setLocation((int) frame.getLocation().getX() + 800, (int) frame.getLocation().getY());
 		logFrame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
-
+		
+		// TODO create a log buffer so memory doesn't run out
+		
+		logTextArea = new JTextArea();
+		logTextArea.setEditable(false);
+		JScrollPane logScroller = new JScrollPane (logTextArea, JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_ALWAYS);
+		new SmartScroller(logScroller);
+		logFrame.add(logScroller);
+		
+		// TODO NEW GUI LAYOUT
+		
+		if (Shared.DISPLAY_NEW_GUI) {
+			(new Thread() {
+				@Override
+				public void run() {
+					ControlUI.instantiate();
+				}
+			}).start();
+		}
+		
 		controlFrame = new JFrame("Controls");
 		controlFrame.setSize(400, 800);
 		controlFrame.setResizable(false);
@@ -489,8 +562,24 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 			RenderHelpers.renderLine(gl, this.curLineColor.get(i), this.vertexValuesGL.get(i)[0], this.vertexValuesGL.get(i)[1], 2.5f);
 		}
 
+		RenderHelpers.render3DText(textRenderer3D, "X", 41, 0, 0, 0.05f);
+		RenderHelpers.render3DText(textRenderer3D, "Z", -1, 41, 0, 0.05f);
+		RenderHelpers.render3DText(textRenderer3D, "Y", -1, 0, -41, 0.05f);
+		
+		// TODO optimize code block below
+		
+		if (this.vertexValuesGL.size() > 0) {
+			RenderHelpers.renderText(textRenderer, this.currentCommandText.get(this.vertexValuesGL.size() - 1), 300, 5, this.glWidth, this.glWidth);
+			RenderHelpers.renderText(textRenderer, this.spindleSpeedText.get(this.vertexValuesGL.size() - 1), 300, 35, this.glWidth, this.glWidth);
+			RenderHelpers.renderText(textRenderer, this.feedRateText.get(this.vertexValuesGL.size() - 1), 300, 75, this.glWidth, this.glWidth);
+		} else if (this.currentCommandText.size() > 0) {
+			RenderHelpers.renderText(textRenderer, this.currentCommandText.get(0), 300, 5, this.glWidth, this.glWidth);
+			RenderHelpers.renderText(textRenderer, this.spindleSpeedText.get(0), 300, 35, this.glWidth, this.glWidth);
+			RenderHelpers.renderText(textRenderer, this.feedRateText.get(0), 300, 75, this.glWidth, this.glWidth);
+		}
+		
 		RenderHelpers.renderText(this.textRenderer, this.axisLockText, 5, 5, this.glWidth, this.glHeight);
-		RenderHelpers.renderText(this.textRenderer, this.decreaseSensitivityText, 5, 35, this.glWidth, this.glHeight);
+		RenderHelpers.renderText(this.textRenderer, this.decreaseSensitivityText, 5, 35, this.glWidth, this.glWidth);
 
 		if (this.takeScreenshot) {
 			Logger.info("Taking screenshot...");
@@ -515,7 +604,8 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		Logger.debug("OpenGL init");
 
 		GL2 gl = glad.getGL().getGL2();
-		textRenderer = new TextRenderer(new Font("Roboto", Font.PLAIN, 30));
+		textRenderer = new TextRenderer(new Font("Roboto", Font.PLAIN, 20));
+		textRenderer3D = new TextRenderer(new Font("Roboto", Font.PLAIN, 100));
 		glu = new GLU();
 
 		gl.glEnable(GL2.GL_DEPTH_TEST);
@@ -563,6 +653,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 			}
 		}).start();
 	}
+	
 
 	public void exit() {
 		Logger.debug("Window closing...");
@@ -753,8 +844,14 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		// TODO Auto-generated method stub
 
 	}
+	
+	@Override
+	public synchronized void appendToLog(String entry) {
+		if (logTextArea != null)
+			logTextArea.append(entry + "\n");
+	}
 
 	public static void main(String[] args) {
 		new RenderUI();
-	}
+	}	
 }

@@ -7,6 +7,7 @@ public class Shared {
 	public static final String VERSION = "v1.0";
 	public static final String SOURCE_CODE_URL = "https://github.com/skyguy126/GCI";
 	
+	public static final boolean DISPLAY_NEW_GUI = false;
 	public static final boolean DEBUG_MODE = true;
 	public static final boolean VSYNC = true;
 	

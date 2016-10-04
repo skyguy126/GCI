@@ -11,4 +11,4 @@
 * Syntax checking and error reporting
 
 #### Dependencies
-[JOGL](http://jogamp.org/jogl/www/), [TinyLog](http://www.tinylog.org/)
+[JOGL](http://jogamp.org/jogl/www/), [TinyLog](http://www.tinylog.org/), [SmartScroller](http://tinyurl.com/zycf3zw)
