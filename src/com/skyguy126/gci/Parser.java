@@ -1,6 +1,5 @@
 package com.skyguy126.gci;
 
-import org.pmw.tinylog.Configurator;
 import org.pmw.tinylog.Logger;
 
 import java.io.BufferedReader;
@@ -225,6 +224,8 @@ public class Parser {
 					case "M30":
 					case "M47":
 					case "M02":
+					case "T01":
+					case "T02":
 						break;
 					case "G20":
 						if (measurementMode == null) {

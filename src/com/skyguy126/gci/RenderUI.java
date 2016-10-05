@@ -32,6 +32,7 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.concurrent.CountDownLatch;
 import java.awt.Menu;
 import java.awt.MenuBar;
 import java.awt.MenuItem;
@@ -61,15 +62,15 @@ import com.jogamp.opengl.glu.GLU;
 import com.jogamp.opengl.util.Animator;
 import com.jogamp.opengl.util.awt.TextRenderer;
 
+import javafx.application.Platform;
+
 // TODO
-// Add console writer to log in JFrame
 // Add settings to change mouse sensitivity
 // Switch to float values in gl loop
-// Change zoom method to use FOV not glTranslate
 // Fix screenshot aspect ratio
-// Add anti-aliasing
 
-public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotionListener, MouseListener, KeyListener, LogWriter {
+public class RenderUI
+		implements GLEventListener, MouseWheelListener, MouseMotionListener, MouseListener, KeyListener, LogWriter {
 
 	private Frame frame;
 	private MenuBar menuBar;
@@ -88,7 +89,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	private GLCanvas glcanvas;
 	private Animator animator;
 	private GLU glu;
-	
+
 	private double lastX;
 	private double lastY;
 
@@ -115,18 +116,18 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	private volatile ArrayList<float[][]> vertexValuesGL;
 	private volatile ArrayList<float[][]> vertexValues;
 	private volatile ArrayList<Color> curLineColor;
-	
+
 	private ArrayList<String> spindleSpeedText;
 	private ArrayList<String> feedRateText;
 	private ArrayList<String> currentCommandText;
-	
+
 	private Runnable showLoadingDialog = new Runnable() {
 		@Override
 		public void run() {
 			loadingDialog.setVisible(true);
 		}
 	};
-	
+
 	private Runnable dismissLoadingDialog = new Runnable() {
 		@Override
 		public void run() {
@@ -185,7 +186,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 				}
 
 				try {
-					Thread.sleep(17);
+					Thread.sleep(Shared.TIME_SCALE);
 				} catch (InterruptedException e) {
 					Logger.error(e);
 				}
@@ -204,7 +205,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		@Override
 		public void run() {
 			runOnNewThread(showLoadingDialog);
-			
+
 			if (Shared.DEBUG_MODE) {
 				try {
 					Thread.sleep(1000);
@@ -212,27 +213,27 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 					Logger.error(e);
 				}
 			}
-			
+
 			Parser parser = new Parser(filePath);
 			boolean parseSuccess = parser.parse();
 			boolean interpSuccess = false;
-			
+
 			if (parseSuccess) {
 				Interpreter interpreter = new Interpreter(parser.getGCodeArray());
 				interpSuccess = interpreter.generateAbsolute();
-				
+
 				if (interpSuccess) {
 					vertexValues = interpreter.getVertexValues();
 					curLineColor = interpreter.getCurrentLineColor();
 					feedRateText = interpreter.getFeedRateText();
 					currentCommandText = interpreter.getCurrentCommandText();
 					spindleSpeedText = interpreter.getSpindleSpeedText();
-					
+
 					Logger.info("Loaded file!");
 					runOnNewThread(dismissLoadingDialog);
 				}
 			}
-			
+
 			runOnNewThread(dismissLoadingDialog);
 			if (!parseSuccess || !interpSuccess)
 				runOnNewThread(showParseErrorDialog);
@@ -277,7 +278,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 				// If no extension is given append one
 				if (!file.endsWith(".png"))
 					file += ".png";
-				
+
 				Logger.debug("Save Directory: {}", file);
 
 				try {
@@ -297,7 +298,8 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	}
 
 	public RenderUI() {
-		Configurator.defaultConfig().writer(new LogController(this)).formatPattern(Shared.LOG_FORMAT).level(Shared.LOG_LEVEL).activate();
+		Configurator.defaultConfig().writer(new LogController(this)).formatPattern(Shared.LOG_FORMAT)
+				.level(Shared.LOG_LEVEL).activate();
 
 		Logger.debug("RenderUI initiated");
 
@@ -345,7 +347,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		this.glWidth = glcanvas.getWidth();
 		this.screenshotBuffer = ByteBuffer.allocate(this.glHeight * this.glWidth * 3);
 
-		frame = new Frame("GCODE Interpreter - " + Shared.VERSION);
+		frame = new Frame("GCI - " + Shared.VERSION);
 		frame.setSize(800, 800);
 		frame.setResizable(false);
 		frame.add(glcanvas);
@@ -356,19 +358,19 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 				exit();
 			}
 		});
-		
+
 		loadingDialog = new JDialog(frame, "Please Wait...", true);
 		loadingDialog.setDefaultCloseOperation(JDialog.DO_NOTHING_ON_CLOSE);
 		loadingDialog.add(new JLabel("Loading...", new ImageIcon("res/ajax-loader.gif"), JLabel.CENTER));
 		loadingDialog.setSize(new Dimension(400, 200));
 		loadingDialog.setLocationRelativeTo(null);
-		
+
 		parseErrorDialog = new JDialog(frame, "Error", true);
 		JPanel parseErrorDialogMessagePane = new JPanel();
 		JPanel parseErrorDialogButtonPane = new JPanel();
-		
+
 		parseErrorDialogMessagePane.add(new JLabel("Error loading file. See log for more details.", JLabel.CENTER));
-		
+
 		JButton parseErrorDialogButton = new JButton("Ok");
 		parseErrorDialogButton.addActionListener(new ActionListener() {
 			@Override
@@ -377,9 +379,9 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 			}
 		});
 		parseErrorDialogButtonPane.add(parseErrorDialogButton);
-		
+
 		parseErrorDialog.add(parseErrorDialogMessagePane);
-		parseErrorDialog.add(parseErrorDialogButtonPane,  BorderLayout.SOUTH);
+		parseErrorDialog.add(parseErrorDialogButtonPane, BorderLayout.SOUTH);
 		parseErrorDialog.setSize(new Dimension(400, 200));
 		parseErrorDialog.setLocationRelativeTo(null);
 		parseErrorDialog.pack();
@@ -432,14 +434,14 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 
 		file.add(openMenuItem);
 		file.add(exitMenuItem);
-		
+
 		Menu about = new Menu("About");
 		MenuItem sourceMenuItem = new MenuItem("Source Code");
 		sourceMenuItem.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
 				Logger.debug("Opening source code url...");
-				
+
 				try {
 					Desktop.getDesktop().browse(new URI(Shared.SOURCE_CODE_URL));
 				} catch (IOException ex) {
@@ -450,10 +452,10 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 			}
 		});
 		about.add(sourceMenuItem);
-		
+
 		MenuItem infoMenuItem = new MenuItem("Information");
 		about.add(infoMenuItem);
-		
+
 		menuBar.add(file);
 		menuBar.add(about);
 		frame.setMenuBar(menuBar);
@@ -463,17 +465,18 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		logFrame.setResizable(false);
 		logFrame.setLocation((int) frame.getLocation().getX() + 800, (int) frame.getLocation().getY());
 		logFrame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
-		
+
 		// TODO create a log buffer so memory doesn't run out
-		
+
 		logTextArea = new JTextArea();
 		logTextArea.setEditable(false);
-		JScrollPane logScroller = new JScrollPane (logTextArea, JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_ALWAYS);
+		JScrollPane logScroller = new JScrollPane(logTextArea, JScrollPane.VERTICAL_SCROLLBAR_ALWAYS,
+				JScrollPane.HORIZONTAL_SCROLLBAR_ALWAYS);
 		new SmartScroller(logScroller);
 		logFrame.add(logScroller);
-		
+
 		// TODO NEW GUI LAYOUT
-		
+
 		if (Shared.DISPLAY_NEW_GUI) {
 			(new Thread() {
 				@Override
@@ -482,7 +485,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 				}
 			}).start();
 		}
-		
+
 		controlFrame = new JFrame("Controls");
 		controlFrame.setSize(400, 800);
 		controlFrame.setResizable(false);
@@ -557,27 +560,31 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		RenderHelpers.renderLine(gl, Color.RED, new float[] { 0f, 0f, 0f }, new float[] { 40f, 0f, 0f }, 5f);
 		RenderHelpers.renderLine(gl, Color.RED, new float[] { 0f, 0f, 0f }, new float[] { 0f, 40f, 0f }, 5f);
 		RenderHelpers.renderLine(gl, Color.RED, new float[] { 0f, 0f, 0f }, new float[] { 0f, 0f, -40f }, 5f);
-		
-		for(int i = 0; i < this.vertexValuesGL.size(); i++) {
-			RenderHelpers.renderLine(gl, this.curLineColor.get(i), this.vertexValuesGL.get(i)[0], this.vertexValuesGL.get(i)[1], 2.5f);
+
+		for (int i = 0; i < this.vertexValuesGL.size(); i++) {
+			RenderHelpers.renderLine(gl, this.curLineColor.get(i), this.vertexValuesGL.get(i)[0],
+					this.vertexValuesGL.get(i)[1], 2.5f);
 		}
 
 		RenderHelpers.render3DText(textRenderer3D, "X", 41, 0, 0, 0.05f);
 		RenderHelpers.render3DText(textRenderer3D, "Z", -1, 41, 0, 0.05f);
 		RenderHelpers.render3DText(textRenderer3D, "Y", -1, 0, -41, 0.05f);
-		
+
 		// TODO optimize code block below
-		
+
 		if (this.vertexValuesGL.size() > 0) {
-			RenderHelpers.renderText(textRenderer, this.currentCommandText.get(this.vertexValuesGL.size() - 1), 300, 5, this.glWidth, this.glWidth);
-			RenderHelpers.renderText(textRenderer, this.spindleSpeedText.get(this.vertexValuesGL.size() - 1), 300, 35, this.glWidth, this.glWidth);
-			RenderHelpers.renderText(textRenderer, this.feedRateText.get(this.vertexValuesGL.size() - 1), 300, 75, this.glWidth, this.glWidth);
+			RenderHelpers.renderText(textRenderer, this.currentCommandText.get(this.vertexValuesGL.size() - 1), 300, 5,
+					this.glWidth, this.glWidth);
+			RenderHelpers.renderText(textRenderer, this.spindleSpeedText.get(this.vertexValuesGL.size() - 1), 300, 35,
+					this.glWidth, this.glWidth);
+			RenderHelpers.renderText(textRenderer, this.feedRateText.get(this.vertexValuesGL.size() - 1), 300, 75,
+					this.glWidth, this.glWidth);
 		} else if (this.currentCommandText.size() > 0) {
 			RenderHelpers.renderText(textRenderer, this.currentCommandText.get(0), 300, 5, this.glWidth, this.glWidth);
 			RenderHelpers.renderText(textRenderer, this.spindleSpeedText.get(0), 300, 35, this.glWidth, this.glWidth);
 			RenderHelpers.renderText(textRenderer, this.feedRateText.get(0), 300, 75, this.glWidth, this.glWidth);
 		}
-		
+
 		RenderHelpers.renderText(this.textRenderer, this.axisLockText, 5, 5, this.glWidth, this.glHeight);
 		RenderHelpers.renderText(this.textRenderer, this.decreaseSensitivityText, 5, 35, this.glWidth, this.glWidth);
 
@@ -615,7 +622,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		gl.glEnable(GL2.GL_LINE_SMOOTH);
 		gl.glEnable(GL2.GL_BLEND);
 		gl.glBlendFunc(GL2.GL_SRC_ALPHA, GL2.GL_ONE_MINUS_SRC_ALPHA);
-		gl.glHint (GL2.GL_LINE_SMOOTH_HINT, GL2.GL_NICEST);
+		gl.glHint(GL2.GL_LINE_SMOOTH_HINT, GL2.GL_NICEST);
 		gl.glClearColor(0f, 0f, 0f, 1f);
 		gl.setSwapInterval((Shared.VSYNC) ? 1 : 0);
 
@@ -644,7 +651,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		gl.glMatrixMode(GL2.GL_MODELVIEW);
 		gl.glLoadIdentity();
 	}
-	
+
 	public void runOnNewThread(Runnable r) {
 		(new Thread() {
 			@Override
@@ -653,16 +660,34 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 			}
 		}).start();
 	}
-	
 
 	public void exit() {
-		Logger.debug("Window closing...");
+		Logger.debug("Window closing...");	
+		
+		if (ControlUI.mainStage != null) {
+			
+			final CountDownLatch jfxExitLatch = new CountDownLatch(1);
+			
+			Platform.runLater(new Runnable() {
+				@Override
+				public void run() {
+					ControlUI.mainStage.close();
+					jfxExitLatch.countDown();
+				}
+			});
+			
+			try {
+				jfxExitLatch.await();
+			} catch (InterruptedException e) {
+				Logger.error(e);
+			}
+		}
 
 		if (animator != null)
 			animator.stop();
 
 		frame.remove(glcanvas);
-		frame.dispose();
+		frame.dispose();		
 		System.exit(0);
 	}
 
@@ -844,7 +869,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		// TODO Auto-generated method stub
 
 	}
-	
+
 	@Override
 	public synchronized void appendToLog(String entry) {
 		if (logTextArea != null)
@@ -853,5 +878,5 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 
 	public static void main(String[] args) {
 		new RenderUI();
-	}	
+	}
 }

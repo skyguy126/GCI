@@ -4,7 +4,6 @@ import java.awt.Color;
 import java.util.ArrayList;
 import java.util.Arrays;
 
-import org.pmw.tinylog.Configurator;
 import org.pmw.tinylog.Logger;
 
 public class Interpreter {
@@ -15,6 +14,7 @@ public class Interpreter {
 	private ArrayList<String> feedRateText;
 	private ArrayList<String> currentCommandText;
 	private ArrayList<Color> currentLineColor;
+	private ArrayList<Integer> currentTimeScale;
 
 	private float startX;
 	private float startY;
@@ -31,6 +31,7 @@ public class Interpreter {
 		this.feedRateText = new ArrayList<String>();
 		this.currentCommandText = new ArrayList<String>();
 		this.currentLineColor = new ArrayList<Color>();
+		this.currentTimeScale = new ArrayList<Integer>();
 
 		this.totalTicks = 0;
 
@@ -120,7 +121,7 @@ public class Interpreter {
 				float ySegmentLength = (float) ((curY - lastY) / numSegments);
 				float zSegmentLength = (float) ((curZ - lastZ) / numSegments);
 
-				Logger.debug("distance: {}, segments: {}, segment length: {}", distance, numSegments);
+				Logger.debug("distance: {}, segments: {}", distance, numSegments);
 				Logger.debug("last xyz {}, {}, {}", lastX, lastY, lastZ);
 				Logger.debug("cur xyz {}, {}, {}", curX, curY, curZ);
 				Logger.debug("xSlope {} ySlope {} zSlope {}", xSegmentLength, ySegmentLength, zSegmentLength);
@@ -162,6 +163,9 @@ public class Interpreter {
 					this.feedRateText.add("Feed Rate: " + curFeedRateText);
 					this.spindleSpeedText.add("Spindle Speed: " + curSpindleSpeedText);
 					this.currentCommandText.add("Current Command: " + curCmd);
+					this.currentTimeScale.add(1);
+					
+					this.totalTicks++;
 				}
 
 				Logger.debug("---------- END VERTEX ARRAY ----------");
@@ -171,16 +175,47 @@ public class Interpreter {
 				lastY = curY;
 				lastZ = curZ;
 				break;
+			case "G02":
+			case "G03":
+				Logger.debug("Arc interpolation");
+				
+				for (int x = 1; x < gCodeArray.get(i).size(); x++) {
+					String curArg = gCodeArray.get(i).get(x);
+					Logger.debug("Current arg for G00: {}", curArg);
+
+					if (curArg.startsWith("X"))
+						curX = Float.parseFloat(curArg.substring(1)) * Shared.SEGMENT_SCALE_MULTIPLIER;
+					else if (curArg.startsWith("Y"))
+						curY = Float.parseFloat(curArg.substring(1)) * Shared.SEGMENT_SCALE_MULTIPLIER;
+					else if (curArg.startsWith("Z"))
+						curZ = Float.parseFloat(curArg.substring(1)) * Shared.SEGMENT_SCALE_MULTIPLIER;
+					else if (curArg.startsWith("I"))
+						lastI = Float.parseFloat(curArg.substring(1)) * Shared.SEGMENT_SCALE_MULTIPLIER;
+					else if (curArg.startsWith("J"))
+						lastJ = Float.parseFloat(curArg.substring(1)) * Shared.SEGMENT_SCALE_MULTIPLIER;
+					else if (curArg.startsWith("F")) {
+						curFeedRateText = curArg.substring(1);
+						curFeedRate = Float.parseFloat(curFeedRateText);
+					}
+
+				}
+				Logger.debug("X{} Y{} Z{} I{} J{} FeedRate {}", curX, curY, curZ, lastI, lastJ, curFeedRateText);
+				
+				double powAX = Math.pow((curX - lastX), 2);
+				double powAY = Math.pow((curY - lastY), 2);
+				
+				// TODO arc generation
+				
+				
+				
+				break;
 			default:
 				Logger.error("Error at command {}", curCmd);
 				return false;
 			}
 		}
 		
-		Logger.debug("Vertex array size {}", this.vertexValues.size());
-		Logger.debug("Current command array size {}", this.currentCommandText.size());
-		Logger.debug("Current command array at 0 {}", this.currentCommandText.get(0));
-
+		Logger.debug("Vertex array size: {} Total ticks: {}", this.vertexValues.size(), this.totalTicks);
 		return true;
 	}
 
@@ -197,6 +232,10 @@ public class Interpreter {
 
 	public ArrayList<String> getSpindleSpeedText() {
 		return spindleSpeedText;
+	}
+
+	public ArrayList<Integer> getCurrentTimeScale() {
+		return currentTimeScale;
 	}
 
 	public ArrayList<String> getFeedRateText() {
