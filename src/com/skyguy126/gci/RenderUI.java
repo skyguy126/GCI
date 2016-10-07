@@ -195,7 +195,7 @@ public class RenderUI
 					timeScale = (long) currentTimeScale.get((int) (currentTimePercent * currentTimeScale.size()) - 1);
 				else
 					timeScale = 1;
-				
+
 				try {
 					Thread.sleep(Shared.TIME_SCALE / timeScale);
 				} catch (InterruptedException e) {
@@ -230,13 +230,13 @@ public class RenderUI
 			boolean interpSuccess = false;
 
 			if (parseSuccess) {
-				
+
 				if (parser.getCoordinateMode() != CoordinateMode.ABSOLUTE) {
 					Logger.error("Relative coordinate mode not supported yet.");
 					runOnNewThread(dismissLoadingDialog);
 					return;
 				}
-				
+
 				Interpreter interpreter = new Interpreter(parser.getGCodeArray());
 				interpSuccess = interpreter.generateAbsolute();
 
@@ -554,6 +554,18 @@ public class RenderUI
 			}
 		});
 		controlPanel.add(playButton);
+		
+		JButton isoButton = new JButton("Isometric View");
+		isoButton.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent arg0) {
+				curAngleX = -131f;
+				curAngleY = 30f;
+				curY = 500;
+				curX = 0;
+			}
+		});
+		controlPanel.add(isoButton);
 
 		timeSlider = new JSlider(JSlider.HORIZONTAL, 0, 1000, 0);
 		timeSlider.setMajorTickSpacing(100);
@@ -922,3 +934,4 @@ public class RenderUI
 		new RenderUI();
 	}
 }
+
