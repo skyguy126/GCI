@@ -91,7 +91,7 @@ public class Interpreter {
 
 				for (int x = 1; x < gCodeArray.get(i).size(); x++) {
 					String curArg = gCodeArray.get(i).get(x);
-					Logger.debug("Current arg for G00: {}", curArg);
+					Logger.debug("Current arg for {}: {}", curCmd, curArg);
 
 					if (curArg.startsWith("X"))
 						curX = Float.parseFloat(curArg.substring(1)) * Shared.SEGMENT_SCALE_MULTIPLIER;
@@ -219,9 +219,9 @@ public class Interpreter {
 
 				double totalArcSegments = (int) (totalTheta * Shared.SEGMENT_GENERATION_MULTIPLIER
 						* Shared.ARC_GENERATION_MULTIPLIER / curFeedRate);
-				float dTheta = (float) (totalTheta / totalArcSegments);
-				float zArcSegmentLength = (float) ((curZ - lastZ) / totalArcSegments);
-
+				float dTheta = (float) (totalTheta / (totalArcSegments - 1));
+				float sTheta =(float) (Math.atan2(lastY - lastJ, lastX - lastI));
+				Logger.debug("Starting theta: {}", sTheta);
 				if (curZ != lastZ)
 					Logger.warn("Ramping detected");
 
@@ -232,13 +232,38 @@ public class Interpreter {
 					vertexArray[0][2] = lastY * -1;
 					vertexArray[0][1] = lastZ;
 
-					if (curCmd.equals("G00")) {
-						
+					if (curCmd.equals("G03")) {
+						lastX = (float) (lastI + radius * Math.cos(sTheta + x * dTheta));
+						lastY = (float) (lastJ + radius * Math.sin(sTheta + x * dTheta));
 					}
+
+					if (curCmd.equals("G02")) {
+						lastX = (float) (lastI + radius * Math.cos(sTheta - x * dTheta));
+						lastY = (float) (lastJ + radius * Math.sin(sTheta - x * dTheta));
+					}
+
+					vertexArray[1][0] = lastX;
+					vertexArray[1][2] = lastY * -1;
+					vertexArray[1][1] = lastZ;
+					Logger.debug("{}", Arrays.deepToString(vertexArray));
+					// Add values to main vertex array
+					this.vertexValues.add(vertexArray);
+					this.feedRateText.add("Feed Rate: " + curFeedRateText);
+					this.currentLineColor.add(Color.BLUE);
+					this.spindleSpeedText.add("Spindle Speed: " + curSpindleSpeedText);
+					this.currentCommandText.add("Current Command: " + curCmd);
+					this.currentTimeScale.add(Shared.ARC_GENERATION_MULTIPLIER);
+
+					this.totalTicks++;
 
 				}
 
 				// TODO arc generation
+				// Reset last coordinates for next cycle
+				Logger.debug("---------- END VERTEX ARRAY ----------");
+				lastX = curX;
+				lastY = curY;
+				lastZ = curZ;
 
 				break;
 			default:
