@@ -559,10 +559,13 @@ public class RenderUI
 		isoButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent arg0) {
+				Logger.debug("Setting to isometric view");
+				
 				curAngleX = -131f;
 				curAngleY = 30f;
 				curY = 500;
 				curX = 0;
+				zoomDistance = 100;
 			}
 		});
 		controlPanel.add(isoButton);
@@ -934,4 +937,3 @@ public class RenderUI
 		new RenderUI();
 	}
 }
-
