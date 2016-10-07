@@ -164,7 +164,7 @@ public class Interpreter {
 					this.spindleSpeedText.add("Spindle Speed: " + curSpindleSpeedText);
 					this.currentCommandText.add("Current Command: " + curCmd);
 					this.currentTimeScale.add(1);
-					
+
 					this.totalTicks++;
 				}
 
@@ -178,7 +178,7 @@ public class Interpreter {
 			case "G02":
 			case "G03":
 				Logger.debug("Arc interpolation");
-				
+
 				for (int x = 1; x < gCodeArray.get(i).size(); x++) {
 					String curArg = gCodeArray.get(i).get(x);
 					Logger.debug("Current arg for G00: {}", curArg);
@@ -200,22 +200,55 @@ public class Interpreter {
 
 				}
 				Logger.debug("X{} Y{} Z{} I{} J{} FeedRate {}", curX, curY, curZ, lastI, lastJ, curFeedRateText);
-				
-				double powAX = Math.pow((curX - lastX), 2);
-				double powAY = Math.pow((curY - lastY), 2);
-				
+
+				// Find radius with distance formula
+				double radius = Math.sqrt(Math.pow((curX - lastI), 2) + Math.pow((curY - lastJ), 2));
+				Logger.debug("Radius: {}", radius);
+
+				// Law of cosines to find total number radians to travel
+				double cDistance = Math.sqrt(Math.pow((curX - lastX), 2) + Math.pow((curY - lastY), 2));
+				double cbaValue = Math.pow(cDistance, 2) - 2 * (Math.pow(radius, 2));
+				double abValue = -2 * Math.pow(radius, 2);
+
+				double totalTheta = Math.acos(cbaValue / abValue);
+
+				Logger.debug("Last X: {} Last Y: {}", lastX, lastY);
+				Logger.debug("Last I: {} last J: {}", lastI, lastJ);
+				Logger.debug("curX: {} curY: {}", curX, curY);
+				Logger.debug("Total theta: {}", totalTheta);
+
+				double totalArcSegments = (int) (totalTheta * Shared.SEGMENT_GENERATION_MULTIPLIER
+						* Shared.ARC_GENERATION_MULTIPLIER / curFeedRate);
+				float dTheta = (float) (totalTheta / totalArcSegments);
+				float zArcSegmentLength = (float) ((curZ - lastZ) / totalArcSegments);
+
+				if (curZ != lastZ)
+					Logger.warn("Ramping detected");
+
+				for (int x = 0; x < totalArcSegments; x++) {
+					float[][] vertexArray = new float[2][3];
+
+					vertexArray[0][0] = lastX;
+					vertexArray[0][2] = lastY * -1;
+					vertexArray[0][1] = lastZ;
+
+					if (curCmd.equals("G00")) {
+						
+					}
+
+				}
+
 				// TODO arc generation
-				
-				
-				
+
 				break;
 			default:
 				Logger.error("Error at command {}", curCmd);
 				return false;
 			}
 		}
-		
-		Logger.debug("Vertex array size: {} Total ticks: {}", this.vertexValues.size(), this.totalTicks);
+
+		Logger.debug("Vertex array size: {} Total ticks: {} TimeScale Size: {}", this.vertexValues.size(),
+				this.totalTicks, this.currentTimeScale.size());
 		return true;
 	}
 

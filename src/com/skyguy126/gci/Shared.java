@@ -21,7 +21,7 @@ public class Shared {
 	public static final double DECREASE_SENSITIVITY_MULTIPLIER = 2.5;
 	
 	public static final int SEGMENT_GENERATION_MULTIPLIER = 50;
-	public static final int ARC_GENERATION_MULTIPLIER = 10;
+	public static final int ARC_GENERATION_MULTIPLIER = 5;
 	public static final int SEGMENT_SCALE_MULTIPLIER = 10;
 	
 	public static final long TIME_SCALE = 17;

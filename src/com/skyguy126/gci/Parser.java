@@ -29,7 +29,7 @@ public class Parser {
 			Logger.error(e);
 		}
 	}
-	
+
 	public ArrayList<ArrayList<String>> getGCodeArray() {
 		return this.gCodeArray;
 	}
@@ -62,7 +62,7 @@ public class Parser {
 			while ((currentLine = this.fileReader.readLine()) != null) {
 
 				lineNum++;
-				
+
 				// Check for proper comment syntax and remove comments
 				if (currentLine.contains("(")) {
 					currentLine = currentLine.substring(0, currentLine.indexOf("(")) + "\n";
@@ -155,8 +155,8 @@ public class Parser {
 
 						// Search for X Y Z and F tags following G00 and G01
 
-						if (Pattern.compile("[XYZ]([-])?\\d+([.]\\d+)?").matcher(x).matches()) {
-							
+						if (Pattern.compile("[XYZ]([-])?((\\d+\\.\\d+)|(\\d+)|(\\.\\d+))").matcher(x).matches()) {
+
 							Logger.debug("Detected coordinate value: {}", x);
 
 							// Make sure coordinate can only be defined once on
@@ -175,9 +175,9 @@ public class Parser {
 
 							cmdList.add(x);
 							continue;
-							
+
 						} else if (Pattern.compile("[IJ]([-])?\\d+([.]\\d+)?").matcher(x).matches()) {
-							
+
 							Logger.debug("Detected coordinate value for arc: {}", x);
 
 							if (!iExists && x.startsWith("I")) {
@@ -194,38 +194,44 @@ public class Parser {
 							continue;
 
 						} else if (Pattern.compile("[F]\\d+").matcher(x).matches()) {
-							
+
 							Logger.debug("Detected F value: {}", x);
 							cmdList.add(x);
 							continue;
-							
+
 						} else {
-							
+
 							Logger.error("Syntax error on line {}", lineNum);
 							valid = false;
 							break;
-							
+
 						}
 					}
 
 					switch (x) {
 					case "G04":
+					case "G4":
 					case "G05":
+					case "G5":
 					case "G80":
 					case "G81":
 					case "G82":
 					case "M00":
+					case "M0":
 					case "M01":
+					case "M1":
 					case "M06":
+					case "M6":
 					case "M08":
+					case "M8":
 					case "M09":
+					case "M9":
 					case "M10":
 					case "M11":
 					case "M30":
 					case "M47":
 					case "M02":
-					case "T01":
-					case "T02":
+					case "M2":
 						break;
 					case "G20":
 						if (measurementMode == null) {
@@ -268,22 +274,32 @@ public class Parser {
 						}
 						break;
 					case "M05":
+					case "M5":
 						cmdList.add(x);
 						break;
 					case "M03":
+					case "M3":
 					case "G00":
+					case "G0":
 					case "G01":
+					case "G1":
 					case "G02":
+					case "G2":
 					case "G03":
+					case "G3":
 						cmdList.add(x);
 						lastCmdExists = true;
 						lastCmd = x;
 						break;
 					default:
-						Logger.error("Invalid code on line {} block {}", lineNum, cmdNum);
-						valid = false;
-						loopExit = true;
-						break;
+						if (x.startsWith("T")) {
+							Logger.debug("Ignoring T tag on line {}, block {}", lineNum, cmdNum);
+						} else {
+							Logger.error("Invalid code on line {} block {}", lineNum, cmdNum);
+							valid = false;
+							loopExit = true;
+							break;
+						}
 					}
 
 					// Exit loop if 1 command block on a line is invalid

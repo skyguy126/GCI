@@ -111,6 +111,7 @@ public class RenderUI
 	private volatile boolean decreaseSensitivity;
 	private volatile boolean takeScreenshot;
 	private volatile boolean isPlaying;
+	private volatile boolean ready;
 
 	private volatile ByteBuffer screenshotBuffer;
 	private volatile ArrayList<float[][]> vertexValuesGL;
@@ -120,6 +121,7 @@ public class RenderUI
 	private ArrayList<String> spindleSpeedText;
 	private ArrayList<String> feedRateText;
 	private ArrayList<String> currentCommandText;
+	private ArrayList<Integer> currentTimeScale;
 
 	private Runnable showLoadingDialog = new Runnable() {
 		@Override
@@ -157,7 +159,7 @@ public class RenderUI
 				vertexValuesGL = temp;
 
 				try {
-					Thread.sleep(17);
+					Thread.sleep(Shared.TIME_SCALE);
 				} catch (InterruptedException e) {
 					Logger.error(e);
 				}
@@ -169,6 +171,8 @@ public class RenderUI
 		@Override
 		public void run() {
 			Logger.debug("Playback thread started");
+
+			long timeScale = 1;
 
 			while (true) {
 
@@ -185,8 +189,15 @@ public class RenderUI
 					}
 				}
 
+				if ((int) currentTimePercent == 0 && currentTimeScale.size() > 0)
+					timeScale = (long) currentTimeScale.get(0);
+				else if (currentTimePercent > 0 && currentTimeScale.size() > 0)
+					timeScale = (long) currentTimeScale.get((int) (currentTimePercent * currentTimeScale.size()) - 1);
+				else
+					timeScale = 1;
+				
 				try {
-					Thread.sleep(Shared.TIME_SCALE);
+					Thread.sleep(Shared.TIME_SCALE / timeScale);
 				} catch (InterruptedException e) {
 					Logger.error(e);
 				}
@@ -208,7 +219,7 @@ public class RenderUI
 
 			if (Shared.DEBUG_MODE) {
 				try {
-					Thread.sleep(1000);
+					Thread.sleep(250);
 				} catch (InterruptedException e) {
 					Logger.error(e);
 				}
@@ -219,15 +230,28 @@ public class RenderUI
 			boolean interpSuccess = false;
 
 			if (parseSuccess) {
+				
+				if (parser.getCoordinateMode() != CoordinateMode.ABSOLUTE) {
+					Logger.error("Relative coordinate mode not supported yet.");
+					runOnNewThread(dismissLoadingDialog);
+					return;
+				}
+				
 				Interpreter interpreter = new Interpreter(parser.getGCodeArray());
 				interpSuccess = interpreter.generateAbsolute();
 
 				if (interpSuccess) {
+
+					ready = false;
+
 					vertexValues = interpreter.getVertexValues();
 					curLineColor = interpreter.getCurrentLineColor();
 					feedRateText = interpreter.getFeedRateText();
 					currentCommandText = interpreter.getCurrentCommandText();
 					spindleSpeedText = interpreter.getSpindleSpeedText();
+					currentTimeScale = interpreter.getCurrentTimeScale();
+
+					ready = true;
 
 					Logger.info("Loaded file!");
 					runOnNewThread(dismissLoadingDialog);
@@ -318,6 +342,7 @@ public class RenderUI
 		this.decreaseSensitivity = false;
 		this.takeScreenshot = false;
 		this.isPlaying = false;
+		this.ready = false;
 
 		this.axisLockText = "Axis Lock: NA";
 		this.decreaseSensitivityText = "Dec Sensitivity: false";
@@ -328,6 +353,7 @@ public class RenderUI
 		this.spindleSpeedText = new ArrayList<String>();
 		this.feedRateText = new ArrayList<String>();
 		this.currentCommandText = new ArrayList<String>();
+		this.currentTimeScale = new ArrayList<Integer>();
 
 		this.currentTimePercent = 1.0;
 
@@ -475,6 +501,20 @@ public class RenderUI
 		new SmartScroller(logScroller);
 		logFrame.add(logScroller);
 
+		MenuBar logMenuBar = new MenuBar();
+		Menu taskMenu = new Menu("Task");
+		MenuItem clearMenuItem = new MenuItem("Clear Log");
+		clearMenuItem.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				logTextArea.setText("");
+			}
+		});
+
+		taskMenu.add(clearMenuItem);
+		logMenuBar.add(taskMenu);
+		logFrame.setMenuBar(logMenuBar);
+
 		// TODO NEW GUI LAYOUT
 
 		if (Shared.DISPLAY_NEW_GUI) {
@@ -499,8 +539,10 @@ public class RenderUI
 			public void actionPerformed(ActionEvent e) {
 				if (!isPlaying) {
 					if (currentTimePercent >= 1.0) {
+						Logger.debug("Reset time slider to start");
 						currentTimePercent = 0.0;
 					}
+
 					isPlaying = true;
 					playButton.setText("Stop");
 					timeSlider.setEnabled(false);
@@ -572,14 +614,14 @@ public class RenderUI
 
 		// TODO optimize code block below
 
-		if (this.vertexValuesGL.size() > 0) {
+		if (this.ready && this.vertexValuesGL.size() > 0) {
 			RenderHelpers.renderText(textRenderer, this.currentCommandText.get(this.vertexValuesGL.size() - 1), 300, 5,
 					this.glWidth, this.glWidth);
 			RenderHelpers.renderText(textRenderer, this.spindleSpeedText.get(this.vertexValuesGL.size() - 1), 300, 35,
 					this.glWidth, this.glWidth);
 			RenderHelpers.renderText(textRenderer, this.feedRateText.get(this.vertexValuesGL.size() - 1), 300, 75,
 					this.glWidth, this.glWidth);
-		} else if (this.currentCommandText.size() > 0) {
+		} else if (this.ready && this.currentCommandText.size() > 0) {
 			RenderHelpers.renderText(textRenderer, this.currentCommandText.get(0), 300, 5, this.glWidth, this.glWidth);
 			RenderHelpers.renderText(textRenderer, this.spindleSpeedText.get(0), 300, 35, this.glWidth, this.glWidth);
 			RenderHelpers.renderText(textRenderer, this.feedRateText.get(0), 300, 75, this.glWidth, this.glWidth);
@@ -662,12 +704,12 @@ public class RenderUI
 	}
 
 	public void exit() {
-		Logger.debug("Window closing...");	
-		
+		Logger.debug("Window closing...");
+
 		if (ControlUI.mainStage != null) {
-			
+
 			final CountDownLatch jfxExitLatch = new CountDownLatch(1);
-			
+
 			Platform.runLater(new Runnable() {
 				@Override
 				public void run() {
@@ -675,7 +717,7 @@ public class RenderUI
 					jfxExitLatch.countDown();
 				}
 			});
-			
+
 			try {
 				jfxExitLatch.await();
 			} catch (InterruptedException e) {
@@ -687,7 +729,7 @@ public class RenderUI
 			animator.stop();
 
 		frame.remove(glcanvas);
-		frame.dispose();		
+		frame.dispose();
 		System.exit(0);
 	}
 
