@@ -176,7 +176,7 @@ public class Parser {
 							cmdList.add(x);
 							continue;
 
-						} else if (Pattern.compile("[IJ]([-])?\\d+([.]\\d+)?").matcher(x).matches()) {
+						} else if (Pattern.compile("[IJ]([-])?((\\d+\\.\\d+)|(\\d+)|(\\.\\d+))").matcher(x).matches()) {
 
 							Logger.debug("Detected coordinate value for arc: {}", x);
 
