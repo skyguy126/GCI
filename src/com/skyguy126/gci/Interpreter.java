@@ -211,6 +211,10 @@ public class Interpreter {
 				double abValue = -2 * Math.pow(radius, 2);
 
 				double totalTheta = Math.acos(cbaValue / abValue);
+					
+				if (curCmd.equals("G03")) {
+					totalTheta = 2 * Math.PI -totalTheta;
+				}
 
 				Logger.debug("Last X: {} Last Y: {}", lastX, lastY);
 				Logger.debug("Last I: {} last J: {}", lastI, lastJ);
