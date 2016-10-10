@@ -200,7 +200,7 @@ public class Interpreter {
 					}
 
 				}
-				
+
 				Logger.debug("X{} Y{} Z{} I{} J{} FeedRate {}", curX, curY, curZ, lastI, lastJ, curFeedRateText);
 
 				// Find radius with distance formula
@@ -213,7 +213,7 @@ public class Interpreter {
 				double abValue = -2 * Math.pow(radius, 2);
 
 				double totalTheta = Math.acos(cbaValue / abValue);
-					
+
 				if (curCmd.equals("G03")) {
 					totalTheta = 2 * Math.PI - totalTheta;
 				}
@@ -226,12 +226,12 @@ public class Interpreter {
 				int totalArcSegments = (int) (totalTheta * Shared.SEGMENT_GENERATION_MULTIPLIER
 						* Shared.ARC_GENERATION_MULTIPLIER / curFeedRate);
 				float dTheta = (float) (totalTheta / (totalArcSegments - 1));
-				float startTheta =(float) (Math.atan2(lastY - lastJ, lastX - lastI));
-				
+				float startTheta = (float) (Math.atan2(lastY - lastJ, lastX - lastI));
+
 				Logger.debug("Starting theta: {}", startTheta);
-				
+
 				float zArcSegmentLength = 0f;
-				
+
 				if (curZ != lastZ) {
 					Logger.warn("Ramping detected");
 					zArcSegmentLength = (float) ((curZ - lastZ) / totalArcSegments);
@@ -253,15 +253,15 @@ public class Interpreter {
 					} else {
 						Logger.error("Fatal error in arc generation: {}", curCmd);
 					}
-					
+
 					lastZ += zArcSegmentLength;
 
 					vertexArray[1][0] = lastX;
 					vertexArray[1][2] = lastY * -1;
 					vertexArray[1][1] = lastZ;
-					
+
 					Logger.debug("{}", Arrays.deepToString(vertexArray));
-					
+
 					// Add values to main vertex array
 					this.vertexValues.add(vertexArray);
 					this.feedRateText.add("Feed Rate: " + curFeedRateText);
@@ -273,7 +273,7 @@ public class Interpreter {
 				}
 
 				Logger.debug("---------- END VERTEX ARRAY ----------");
-				
+
 				lastX = curX;
 				lastY = curY;
 				lastZ = curZ;
