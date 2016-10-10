@@ -20,19 +20,26 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSlider;
-import javax.swing.JTextArea;
+import javax.swing.JTextPane;
 import javax.swing.SwingUtilities;
+import javax.swing.UIManager;
 import javax.swing.border.EmptyBorder;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
+import javax.swing.text.BadLocationException;
+import javax.swing.text.DefaultEditorKit;
+import javax.swing.text.SimpleAttributeSet;
+import javax.swing.text.StyleConstants;
+import javax.swing.text.StyledDocument;
 
+import java.io.BufferedWriter;
 import java.io.File;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
-import java.util.concurrent.CountDownLatch;
 import java.awt.Menu;
 import java.awt.MenuBar;
 import java.awt.MenuItem;
@@ -50,6 +57,7 @@ import java.awt.event.WindowEvent;
 import java.awt.image.BufferedImage;
 
 import org.pmw.tinylog.Configurator;
+import org.pmw.tinylog.Level;
 import org.pmw.tinylog.Logger;
 
 import com.jogamp.opengl.GL2;
@@ -61,8 +69,6 @@ import com.jogamp.opengl.awt.GLCanvas;
 import com.jogamp.opengl.glu.GLU;
 import com.jogamp.opengl.util.Animator;
 import com.jogamp.opengl.util.awt.TextRenderer;
-
-import javafx.application.Platform;
 
 // TODO
 // Add settings to change mouse sensitivity
@@ -81,7 +87,7 @@ public class RenderUI
 	private JButton playButton;
 	private JDialog loadingDialog;
 	private JDialog parseErrorDialog;
-	private JTextArea logTextArea;
+	private JTextPane logTextArea;
 
 	private TextRenderer textRenderer;
 	private TextRenderer textRenderer3D;
@@ -89,6 +95,8 @@ public class RenderUI
 	private GLCanvas glcanvas;
 	private Animator animator;
 	private GLU glu;
+
+	private SimpleAttributeSet logFormat;
 
 	private double lastX;
 	private double lastY;
@@ -98,6 +106,7 @@ public class RenderUI
 
 	private volatile String axisLockText;
 	private volatile String decreaseSensitivityText;
+	private volatile String currentFilePath;
 
 	private volatile double zoomDistance;
 	private volatile double curX;
@@ -117,11 +126,10 @@ public class RenderUI
 	private volatile ArrayList<float[][]> vertexValuesGL;
 	private volatile ArrayList<float[][]> vertexValues;
 	private volatile ArrayList<Color> curLineColor;
-
-	private ArrayList<String> spindleSpeedText;
-	private ArrayList<String> feedRateText;
-	private ArrayList<String> currentCommandText;
-	private ArrayList<Integer> currentTimeScale;
+	private volatile ArrayList<String> spindleSpeedText;
+	private volatile ArrayList<String> feedRateText;
+	private volatile ArrayList<String> currentCommandText;
+	private volatile ArrayList<Integer> currentTimeScale;
 
 	private Runnable showLoadingDialog = new Runnable() {
 		@Override
@@ -136,6 +144,7 @@ public class RenderUI
 			loadingDialog.setVisible(false);
 		}
 	};
+
 	private Runnable showParseErrorDialog = new Runnable() {
 		@Override
 		public void run() {
@@ -183,9 +192,7 @@ public class RenderUI
 						currentTimePercent += 0.001;
 						timeSlider.setValue((int) (currentTimePercent * timeSlider.getMaximum()));
 					} else {
-						isPlaying = false;
-						playButton.setText("Play");
-						timeSlider.setEnabled(true);
+						stopPlayback();
 					}
 				}
 
@@ -216,6 +223,8 @@ public class RenderUI
 		@Override
 		public void run() {
 			runOnNewThread(showLoadingDialog);
+
+			Logger.info("Attempting to load: {}", filePath);
 
 			if (Shared.DEBUG_MODE) {
 				try {
@@ -311,7 +320,7 @@ public class RenderUI
 					Logger.error("Screenshot failed: {}", e);
 				}
 
-				Logger.info("Screenshot saved");
+				Logger.info("Screenshot saved to: {}", file);
 
 			} else {
 				Logger.debug("Screenshot save cancelled");
@@ -346,6 +355,7 @@ public class RenderUI
 
 		this.axisLockText = "Axis Lock: NA";
 		this.decreaseSensitivityText = "Dec Sensitivity: false";
+		this.currentFilePath = "";
 
 		this.vertexValues = new ArrayList<float[][]>();
 		this.vertexValuesGL = new ArrayList<float[][]>();
@@ -356,6 +366,15 @@ public class RenderUI
 		this.currentTimeScale = new ArrayList<Integer>();
 
 		this.currentTimePercent = 1.0;
+		this.logFormat = new SimpleAttributeSet();
+
+		if (Shared.USE_SYSTEM_LOOK_AND_FEEL) {
+			try {
+				UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+			} catch (Exception e) {
+				Logger.error(e);
+			}
+		}
 
 		glcaps = new GLCapabilities(GLProfile.get(GLProfile.GL2));
 		glcaps.setDoubleBuffered(true);
@@ -427,6 +446,9 @@ public class RenderUI
 			@Override
 			public void actionPerformed(ActionEvent e) {
 
+				if (RenderUI.this.isPlaying)
+					stopPlayback();
+
 				JFileChooser fileChooser = new JFileChooser();
 
 				if (fileChooser.showOpenDialog(frame.getOwner()) == JFileChooser.APPROVE_OPTION) {
@@ -441,6 +463,7 @@ public class RenderUI
 							fileExtension = filePath.substring(extensionIndex);
 
 						if (fileExtension.equals(".nc") || fileExtension.equals(".txt")) {
+							RenderUI.this.currentFilePath = filePath;
 							FileLoader fileLoader = new FileLoader(filePath);
 							fileLoader.start();
 						} else {
@@ -454,7 +477,6 @@ public class RenderUI
 					Logger.debug("File open cancelled");
 					return;
 				}
-
 			}
 		});
 
@@ -494,10 +516,14 @@ public class RenderUI
 
 		// TODO create a log buffer so memory doesn't run out
 
-		logTextArea = new JTextArea();
+		logTextArea = new JTextPane();
 		logTextArea.setEditable(false);
-		JScrollPane logScroller = new JScrollPane(logTextArea, JScrollPane.VERTICAL_SCROLLBAR_ALWAYS,
+		logTextArea.getStyledDocument().putProperty(DefaultEditorKit.EndOfLineStringProperty, "\n");
+		JPanel noWrapPanel = new JPanel(new BorderLayout());
+		noWrapPanel.add(logTextArea);
+		JScrollPane logScroller = new JScrollPane(noWrapPanel, JScrollPane.VERTICAL_SCROLLBAR_ALWAYS,
 				JScrollPane.HORIZONTAL_SCROLLBAR_ALWAYS);
+		logScroller.getVerticalScrollBar().setUnitIncrement(16);
 		new SmartScroller(logScroller);
 		logFrame.add(logScroller);
 
@@ -511,20 +537,52 @@ public class RenderUI
 			}
 		});
 
+		MenuItem saveMenuItem = new MenuItem("Save Log");
+		saveMenuItem.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				try {
+					String log = logTextArea.getDocument().getText(0, logTextArea.getDocument().getLength());
+
+					JFileChooser fileChooser = new JFileChooser();
+					fileChooser.setDialogTitle("Save Log");
+					fileChooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
+					fileChooser.setApproveButtonText("Save");
+
+					if (fileChooser.showOpenDialog(frame.getOwner()) == JFileChooser.APPROVE_OPTION) {
+						String file = fileChooser.getSelectedFile().getAbsolutePath().toString();
+
+						// If no extension is given append one
+						if (!file.endsWith(".txt"))
+							file += ".txt";
+
+						Logger.debug("Save Directory: {}", file);
+
+						try {
+							File logFile = new File(file);
+							BufferedWriter writer = new BufferedWriter(new FileWriter(logFile));
+							writer.write(log);
+							writer.close();
+						} catch (IOException ex) {
+							Logger.error("Log save failed: {}", ex);
+						}
+
+						Logger.info("Log saved to: {}", file);
+
+					} else {
+						Logger.debug("Log save cancelled");
+						return;
+					}
+				} catch (BadLocationException e1) {
+					Logger.error(e1);
+				}
+			}
+		});
+
 		taskMenu.add(clearMenuItem);
+		taskMenu.add(saveMenuItem);
 		logMenuBar.add(taskMenu);
 		logFrame.setMenuBar(logMenuBar);
-
-		// TODO NEW GUI LAYOUT
-
-		if (Shared.DISPLAY_NEW_GUI) {
-			(new Thread() {
-				@Override
-				public void run() {
-					ControlUI.instantiate();
-				}
-			}).start();
-		}
 
 		controlFrame = new JFrame("Controls");
 		controlFrame.setSize(400, 800);
@@ -543,32 +601,13 @@ public class RenderUI
 						currentTimePercent = 0.0;
 					}
 
-					isPlaying = true;
-					playButton.setText("Stop");
-					timeSlider.setEnabled(false);
+					startPlayback();
 				} else {
-					isPlaying = false;
-					playButton.setText("Play");
-					timeSlider.setEnabled(true);
+					stopPlayback();
 				}
 			}
 		});
 		controlPanel.add(playButton);
-		
-		JButton isoButton = new JButton("Isometric View");
-		isoButton.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed(ActionEvent arg0) {
-				Logger.debug("Setting to isometric view");
-				
-				curAngleX = -131f;
-				curAngleY = 30f;
-				curY = 500;
-				curX = 0;
-				zoomDistance = 100;
-			}
-		});
-		controlPanel.add(isoButton);
 
 		timeSlider = new JSlider(JSlider.HORIZONTAL, 0, 1000, 0);
 		timeSlider.setMajorTickSpacing(100);
@@ -585,6 +624,16 @@ public class RenderUI
 		});
 		controlPanel.add(timeSlider);
 
+		JButton isoButton = new JButton("Isometric View");
+		isoButton.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent arg0) {
+				Logger.debug("Setting camera to isometric view");
+				setCameraToIsometric();
+			}
+		});
+		controlPanel.add(isoButton);
+
 		JButton screenshotButton = new JButton("Screenshot");
 		screenshotButton.addActionListener(new ActionListener() {
 			@Override
@@ -593,15 +642,27 @@ public class RenderUI
 			}
 		});
 		controlPanel.add(screenshotButton);
+		controlFrame.add(controlPanel);
 
 		this.performPlayback.start();
 		this.animateVertexValues.start();
 
-		controlFrame.add(controlPanel);
 		logFrame.setVisible(true);
 		controlFrame.setVisible(true);
 		frame.setVisible(true);
 		frame.requestFocus();
+	}
+
+	private void startPlayback() {
+		isPlaying = true;
+		playButton.setText("Stop");
+		timeSlider.setEnabled(false);
+	}
+
+	private void stopPlayback() {
+		isPlaying = false;
+		playButton.setText("Play");
+		timeSlider.setEnabled(true);
 	}
 
 	@Override
@@ -618,6 +679,8 @@ public class RenderUI
 		RenderHelpers.renderLine(gl, Color.RED, new float[] { 0f, 0f, 0f }, new float[] { 0f, 40f, 0f }, 5f);
 		RenderHelpers.renderLine(gl, Color.RED, new float[] { 0f, 0f, 0f }, new float[] { 0f, 0f, -40f }, 5f);
 
+		// TODO change gl line method to connected line not individual segments
+
 		for (int i = 0; i < this.vertexValuesGL.size(); i++) {
 			RenderHelpers.renderLine(gl, this.curLineColor.get(i), this.vertexValuesGL.get(i)[0],
 					this.vertexValuesGL.get(i)[1], 2.5f);
@@ -626,24 +689,6 @@ public class RenderUI
 		RenderHelpers.render3DText(textRenderer3D, "X", 41, 0, 0, 0.05f);
 		RenderHelpers.render3DText(textRenderer3D, "Z", -1, 41, 0, 0.05f);
 		RenderHelpers.render3DText(textRenderer3D, "Y", -1, 0, -41, 0.05f);
-
-		// TODO optimize code block below
-
-		if (this.ready && this.vertexValuesGL.size() > 0) {
-			RenderHelpers.renderText(textRenderer, this.currentCommandText.get(this.vertexValuesGL.size() - 1), 300, 5,
-					this.glWidth, this.glWidth);
-			RenderHelpers.renderText(textRenderer, this.spindleSpeedText.get(this.vertexValuesGL.size() - 1), 300, 35,
-					this.glWidth, this.glWidth);
-			RenderHelpers.renderText(textRenderer, this.feedRateText.get(this.vertexValuesGL.size() - 1), 300, 75,
-					this.glWidth, this.glWidth);
-		} else if (this.ready && this.currentCommandText.size() > 0) {
-			RenderHelpers.renderText(textRenderer, this.currentCommandText.get(0), 300, 5, this.glWidth, this.glWidth);
-			RenderHelpers.renderText(textRenderer, this.spindleSpeedText.get(0), 300, 35, this.glWidth, this.glWidth);
-			RenderHelpers.renderText(textRenderer, this.feedRateText.get(0), 300, 75, this.glWidth, this.glWidth);
-		}
-
-		RenderHelpers.renderText(this.textRenderer, this.axisLockText, 5, 5, this.glWidth, this.glHeight);
-		RenderHelpers.renderText(this.textRenderer, this.decreaseSensitivityText, 5, 35, this.glWidth, this.glWidth);
 
 		if (this.takeScreenshot) {
 			Logger.info("Taking screenshot...");
@@ -693,7 +738,6 @@ public class RenderUI
 	public void reshape(GLAutoDrawable glad, int x, int y, int width, int height) {
 		GL2 gl = glad.getGL().getGL2();
 		gl.glViewport(x, y, width, height);
-
 		Logger.debug("GL reshape");
 	}
 
@@ -721,25 +765,6 @@ public class RenderUI
 	public void exit() {
 		Logger.debug("Window closing...");
 
-		if (ControlUI.mainStage != null) {
-
-			final CountDownLatch jfxExitLatch = new CountDownLatch(1);
-
-			Platform.runLater(new Runnable() {
-				@Override
-				public void run() {
-					ControlUI.mainStage.close();
-					jfxExitLatch.countDown();
-				}
-			});
-
-			try {
-				jfxExitLatch.await();
-			} catch (InterruptedException e) {
-				Logger.error(e);
-			}
-		}
-
 		if (animator != null)
 			animator.stop();
 
@@ -754,6 +779,14 @@ public class RenderUI
 		this.curAngleY = 0;
 		this.curX = 0;
 		this.curY = 0;
+	}
+
+	public void setCameraToIsometric() {
+		this.zoomDistance = 130;
+		this.curAngleX = -130f;
+		this.curAngleY = 30f;
+		this.curY = 500;
+		this.curX = 0;
 	}
 
 	public double getDecreaseSensitivityMultiplier() {
@@ -800,8 +833,6 @@ public class RenderUI
 				curX += (dx / getDecreaseSensitivityMultiplier());
 				curY += (dy / getDecreaseSensitivityMultiplier());
 			}
-
-			// TODO use robot to move mouse back to original position
 
 			Logger.debug("Drag - dx: {} dy: {}", dx, dy);
 
@@ -898,6 +929,34 @@ public class RenderUI
 	}
 
 	@Override
+	public void appendToLog(String entry, Level level) {
+		if (logTextArea != null) {
+			if (level == Level.DEBUG || level == Level.INFO)
+				appendToLogPane(entry, Color.BLACK, false);
+			else if (level == Level.WARNING)
+				appendToLogPane(entry, Color.ORANGE, false);
+			else if (level == Level.ERROR)
+				appendToLogPane(entry, Color.RED, true);
+			else
+				appendToLogPane(entry, Color.BLUE, true);
+		}
+	}
+
+	private void appendToLogPane(String entry, Color color, boolean setBold) {
+		StyleConstants.setForeground(this.logFormat, color);
+		StyleConstants.setBold(this.logFormat, setBold);
+
+		// DO NOT PUT LOG STATEMENTS IN THIS METHOD
+
+		try {
+			StyledDocument doc = logTextArea.getStyledDocument();
+			doc.insertString(doc.getLength(), entry + "\n", this.logFormat);
+		} catch (BadLocationException e) {
+			e.printStackTrace();
+		}
+	}
+
+	@Override
 	public void mouseClicked(MouseEvent arg0) {
 		// TODO Auto-generated method stub
 
@@ -925,12 +984,6 @@ public class RenderUI
 	public void keyTyped(KeyEvent e) {
 		// TODO Auto-generated method stub
 
-	}
-
-	@Override
-	public synchronized void appendToLog(String entry) {
-		if (logTextArea != null)
-			logTextArea.append(entry + "\n");
 	}
 
 	public static void main(String[] args) {

@@ -1,7 +1,5 @@
 bin
-tests
 .classpath
 .project
 lib
 build
-/src/com/skyguy126/gci/Tester.java

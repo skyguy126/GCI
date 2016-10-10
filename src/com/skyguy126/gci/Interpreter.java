@@ -85,6 +85,7 @@ public class Interpreter {
 				break;
 			case "G00":
 			case "G01":
+				Logger.debug("Linear interpolation");
 
 				// Extract the X Y and Z float values from line
 				// Gather F value also
@@ -199,6 +200,7 @@ public class Interpreter {
 					}
 
 				}
+				
 				Logger.debug("X{} Y{} Z{} I{} J{} FeedRate {}", curX, curY, curZ, lastI, lastJ, curFeedRateText);
 
 				// Find radius with distance formula
@@ -211,19 +213,29 @@ public class Interpreter {
 				double abValue = -2 * Math.pow(radius, 2);
 
 				double totalTheta = Math.acos(cbaValue / abValue);
+					
+				if (curCmd.equals("G03")) {
+					totalTheta = 2 * Math.PI - totalTheta;
+				}
 
 				Logger.debug("Last X: {} Last Y: {}", lastX, lastY);
 				Logger.debug("Last I: {} last J: {}", lastI, lastJ);
 				Logger.debug("curX: {} curY: {}", curX, curY);
 				Logger.debug("Total theta: {}", totalTheta);
 
-				double totalArcSegments = (int) (totalTheta * Shared.SEGMENT_GENERATION_MULTIPLIER
+				int totalArcSegments = (int) (totalTheta * Shared.SEGMENT_GENERATION_MULTIPLIER
 						* Shared.ARC_GENERATION_MULTIPLIER / curFeedRate);
 				float dTheta = (float) (totalTheta / (totalArcSegments - 1));
-				float sTheta =(float) (Math.atan2(lastY - lastJ, lastX - lastI));
-				Logger.debug("Starting theta: {}", sTheta);
-				if (curZ != lastZ)
+				float startTheta =(float) (Math.atan2(lastY - lastJ, lastX - lastI));
+				
+				Logger.debug("Starting theta: {}", startTheta);
+				
+				float zArcSegmentLength = 0f;
+				
+				if (curZ != lastZ) {
 					Logger.warn("Ramping detected");
+					zArcSegmentLength = (float) ((curZ - lastZ) / totalArcSegments);
+				}
 
 				for (int x = 0; x < totalArcSegments; x++) {
 					float[][] vertexArray = new float[2][3];
@@ -233,19 +245,23 @@ public class Interpreter {
 					vertexArray[0][1] = lastZ;
 
 					if (curCmd.equals("G03")) {
-						lastX = (float) (lastI + radius * Math.cos(sTheta + x * dTheta));
-						lastY = (float) (lastJ + radius * Math.sin(sTheta + x * dTheta));
+						lastX = (float) (lastI + radius * Math.cos(startTheta - x * dTheta));
+						lastY = (float) (lastJ + radius * Math.sin(startTheta - x * dTheta));
+					} else if (curCmd.equals("G02")) {
+						lastX = (float) (lastI + radius * Math.cos(startTheta - x * dTheta));
+						lastY = (float) (lastJ + radius * Math.sin(startTheta - x * dTheta));
+					} else {
+						Logger.error("Fatal error in arc generation: {}", curCmd);
 					}
-
-					if (curCmd.equals("G02")) {
-						lastX = (float) (lastI + radius * Math.cos(sTheta - x * dTheta));
-						lastY = (float) (lastJ + radius * Math.sin(sTheta - x * dTheta));
-					}
+					
+					lastZ += zArcSegmentLength;
 
 					vertexArray[1][0] = lastX;
 					vertexArray[1][2] = lastY * -1;
 					vertexArray[1][1] = lastZ;
+					
 					Logger.debug("{}", Arrays.deepToString(vertexArray));
+					
 					// Add values to main vertex array
 					this.vertexValues.add(vertexArray);
 					this.feedRateText.add("Feed Rate: " + curFeedRateText);
@@ -253,18 +269,14 @@ public class Interpreter {
 					this.spindleSpeedText.add("Spindle Speed: " + curSpindleSpeedText);
 					this.currentCommandText.add("Current Command: " + curCmd);
 					this.currentTimeScale.add(Shared.ARC_GENERATION_MULTIPLIER);
-
 					this.totalTicks++;
-
 				}
 
-				// TODO arc generation
-				// Reset last coordinates for next cycle
 				Logger.debug("---------- END VERTEX ARRAY ----------");
+				
 				lastX = curX;
 				lastY = curY;
 				lastZ = curZ;
-
 				break;
 			default:
 				Logger.error("Error at command {}", curCmd);

@@ -4,7 +4,6 @@ import java.util.EnumSet;
 import java.util.Set;
 
 import org.pmw.tinylog.Configuration;
-import org.pmw.tinylog.Level;
 import org.pmw.tinylog.LogEntry;
 import org.pmw.tinylog.writers.LogEntryValue;
 import org.pmw.tinylog.writers.VMShutdownHook;
@@ -44,6 +43,6 @@ public class LogController implements Writer {
 	public void write(LogEntry entry) throws Exception {
 		String logEntry = entry.getLevel() + " - " + entry.getMessage();
 		System.out.println(entry.getDate() + ": " + logEntry);
-		logWriter.appendToLog(logEntry);		
+		logWriter.appendToLog(logEntry, entry.getLevel());		
 	}
 }
