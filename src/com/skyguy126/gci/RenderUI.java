@@ -8,6 +8,7 @@ import java.awt.Font;
 import java.awt.Frame;
 import java.awt.Graphics;
 import java.awt.GridLayout;
+import java.awt.Image;
 
 import javax.imageio.ImageIO;
 import javax.swing.ImageIcon;
@@ -40,9 +41,22 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.List;
 import java.awt.Menu;
 import java.awt.MenuBar;
 import java.awt.MenuItem;
+import java.awt.Toolkit;
+import java.awt.datatransfer.Clipboard;
+import java.awt.datatransfer.ClipboardOwner;
+import java.awt.datatransfer.DataFlavor;
+import java.awt.datatransfer.Transferable;
+import java.awt.datatransfer.UnsupportedFlavorException;
+import java.awt.dnd.DnDConstants;
+import java.awt.dnd.DropTarget;
+import java.awt.dnd.DropTargetDragEvent;
+import java.awt.dnd.DropTargetDropEvent;
+import java.awt.dnd.DropTargetEvent;
+import java.awt.dnd.DropTargetListener;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.KeyEvent;
@@ -75,8 +89,8 @@ import com.jogamp.opengl.util.awt.TextRenderer;
 // Switch to float values in gl loop
 // Fix screenshot aspect ratio
 
-public class RenderUI
-		implements GLEventListener, MouseWheelListener, MouseMotionListener, MouseListener, KeyListener, LogWriter {
+public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotionListener, MouseListener, KeyListener,
+		LogWriter, DropTargetListener {
 
 	private Frame frame;
 	private MenuBar menuBar;
@@ -119,6 +133,7 @@ public class RenderUI
 	private volatile boolean lockVertAxis;
 	private volatile boolean decreaseSensitivity;
 	private volatile boolean takeScreenshot;
+	private volatile boolean screenshotToClipboard;
 	private volatile boolean isPlaying;
 	private volatile boolean ready;
 
@@ -228,7 +243,7 @@ public class RenderUI
 
 			if (Shared.DEBUG_MODE) {
 				try {
-					Thread.sleep(250);
+					Thread.sleep(750);
 				} catch (InterruptedException e) {
 					Logger.error(e);
 				}
@@ -273,16 +288,18 @@ public class RenderUI
 		}
 	}
 
-	private class Screenshot extends Thread {
+	private class Screenshot extends Thread implements ClipboardOwner {
 
 		private ByteBuffer buffer;
 		private int height;
 		private int width;
+		private boolean clipboard;
 
-		public Screenshot(ByteBuffer b, int h, int w) {
+		public Screenshot(ByteBuffer b, int h, int w, boolean c) {
 			this.buffer = b;
 			this.height = h;
 			this.width = w;
+			this.clipboard = c;
 		}
 
 		@Override
@@ -300,33 +317,76 @@ public class RenderUI
 
 			Logger.debug("Copied bytes to buffered image");
 
-			JFileChooser fileChooser = new JFileChooser();
-			fileChooser.setDialogTitle("Save Screenshot");
-			fileChooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
-			fileChooser.setApproveButtonText("Save");
-
-			if (fileChooser.showOpenDialog(frame.getOwner()) == JFileChooser.APPROVE_OPTION) {
-				String file = fileChooser.getSelectedFile().getAbsolutePath().toString();
-
-				// If no extension is given append one
-				if (!file.endsWith(".png"))
-					file += ".png";
-
-				Logger.debug("Save Directory: {}", file);
-
+			if (this.clipboard) {
 				try {
-					ImageIO.write(img, "png", new File(file));
-				} catch (IOException e) {
-					Logger.error("Screenshot failed: {}", e);
+					TransferableImage timg = new TransferableImage(img);
+					Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+					clipboard.setContents(timg, this);
+					Logger.info("Copied screenshot to clipboard");
+				} catch (Exception e) {
+					Logger.error("Screenshot to clipboard failed: {}", e);
 				}
-
-				Logger.info("Screenshot saved to: {}", file);
-
 			} else {
-				Logger.debug("Screenshot save cancelled");
-				return;
-			}
+				JFileChooser fileChooser = new JFileChooser();
+				fileChooser.setDialogTitle("Save Screenshot");
+				fileChooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
+				fileChooser.setApproveButtonText("Save");
 
+				if (fileChooser.showOpenDialog(frame.getOwner()) == JFileChooser.APPROVE_OPTION) {
+					String file = fileChooser.getSelectedFile().getAbsolutePath().toString();
+
+					// If no extension is given append one
+					if (!file.endsWith(".png"))
+						file += ".png";
+
+					Logger.debug("Save Directory: {}", file);
+
+					try {
+						ImageIO.write(img, "png", new File(file));
+					} catch (IOException e) {
+						Logger.error("Screenshot failed: {}", e);
+					}
+
+					Logger.info("Screenshot saved to: {}", file);
+
+				} else {
+					Logger.debug("Screenshot save cancelled");
+					return;
+				}
+			}
+		}
+
+		@Override
+		public void lostOwnership(Clipboard c, Transferable t) {
+			Logger.debug("Lost clipboard ownership");
+
+		}
+	}
+
+	private class TransferableImage implements Transferable {
+		private Image image;
+
+		public TransferableImage(Image i) {
+			this.image = i;
+		}
+
+		@Override
+		public Object getTransferData(DataFlavor flavor) throws UnsupportedFlavorException, IOException {
+			if (isDataFlavorSupported(flavor)) {
+				return image;
+			} else {
+				throw new UnsupportedFlavorException(flavor);
+			}
+		}
+
+		@Override
+		public DataFlavor[] getTransferDataFlavors() {
+			return new DataFlavor[] { DataFlavor.imageFlavor };
+		}
+
+		@Override
+		public boolean isDataFlavorSupported(DataFlavor flavor) {
+			return flavor == DataFlavor.imageFlavor;
 		}
 	}
 
@@ -334,11 +394,7 @@ public class RenderUI
 		Configurator.defaultConfig().writer(new LogController(this)).formatPattern(Shared.LOG_FORMAT)
 				.level(Shared.LOG_LEVEL).activate();
 
-		Logger.debug("RenderUI initiated");
-
-		assert Shared.PAN_SENSITIVITY_MULTIPLIER > 0 : "Pan sensitivity must be greater than 0";
-		assert Shared.ROTATE_SENSITIVITY_MULTIPLIER > 0 : "Rotate sensitivity must be greater than 0";
-		assert Shared.ZOOM_SENSITIVITY_MULTIPLIER > 0 : "Zoom sensitivity must be greater than 0";
+		Logger.debug("RUI initiated");
 
 		this.zoomDistance = 100;
 		this.curX = 0;
@@ -350,6 +406,7 @@ public class RenderUI
 		this.lockVertAxis = false;
 		this.decreaseSensitivity = false;
 		this.takeScreenshot = false;
+		this.screenshotToClipboard = false;
 		this.isPlaying = false;
 		this.ready = false;
 
@@ -388,6 +445,8 @@ public class RenderUI
 		glcanvas.addMouseWheelListener(this);
 		glcanvas.addMouseMotionListener(this);
 
+		DropTarget dropTarget = new DropTarget(glcanvas, DnDConstants.ACTION_COPY_OR_MOVE, this, true, null);
+
 		this.glHeight = glcanvas.getHeight();
 		this.glWidth = glcanvas.getWidth();
 		this.screenshotBuffer = ByteBuffer.allocate(this.glHeight * this.glWidth * 3);
@@ -397,10 +456,24 @@ public class RenderUI
 		frame.setResizable(false);
 		frame.add(glcanvas);
 		frame.setLocationRelativeTo(null);
+		frame.setIconImage(new ImageIcon(getClass().getClassLoader().getResource("res/main_ico.png")).getImage());
 		frame.addWindowListener(new WindowAdapter() {
 			@Override
 			public void windowClosing(WindowEvent evt) {
 				exit();
+			}
+
+			@Override
+			public void windowActivated(WindowEvent e) {
+				Logger.debug("Main frame gained focus");
+
+				controlFrame.setFocusableWindowState(false);
+				logFrame.setFocusableWindowState(false);
+				controlFrame.toFront();
+				logFrame.toFront();
+				frame.requestFocus();
+				controlFrame.setFocusableWindowState(true);
+				logFrame.setFocusableWindowState(true);
 			}
 		});
 
@@ -409,13 +482,16 @@ public class RenderUI
 		loadingDialog.add(new JLabel("Loading...",
 				new ImageIcon(getClass().getClassLoader().getResource("res/loader.gif")), JLabel.CENTER));
 		loadingDialog.setSize(new Dimension(400, 200));
+		loadingDialog
+				.setIconImage(new ImageIcon(getClass().getClassLoader().getResource("res/loading_ico.png")).getImage());
 		loadingDialog.setLocationRelativeTo(null);
 
 		parseErrorDialog = new JDialog(frame, "Error", true);
 		JPanel parseErrorDialogMessagePane = new JPanel();
 		JPanel parseErrorDialogButtonPane = new JPanel();
 
-		parseErrorDialogMessagePane.add(new JLabel("Error loading file. See log for more details.", JLabel.CENTER));
+		parseErrorDialogMessagePane.add(new JLabel("Error loading file. See log for more details.",
+				new ImageIcon(getClass().getClassLoader().getResource("res/error.png")), JLabel.CENTER));
 
 		JButton parseErrorDialogButton = new JButton("Ok");
 		parseErrorDialogButton.addActionListener(new ActionListener() {
@@ -429,6 +505,8 @@ public class RenderUI
 		parseErrorDialog.add(parseErrorDialogMessagePane);
 		parseErrorDialog.add(parseErrorDialogButtonPane, BorderLayout.SOUTH);
 		parseErrorDialog.setSize(new Dimension(400, 200));
+		parseErrorDialog
+				.setIconImage(new ImageIcon(getClass().getClassLoader().getResource("res/error.png")).getImage());
 		parseErrorDialog.setLocationRelativeTo(null);
 		parseErrorDialog.pack();
 
@@ -451,28 +529,17 @@ public class RenderUI
 					stopPlayback();
 
 				JFileChooser fileChooser = new JFileChooser();
+				fileChooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
+
+				if (!RenderUI.this.currentFilePath.equals("")) {
+					fileChooser.setCurrentDirectory(new File(RenderUI.this.currentFilePath).getParentFile());
+					Logger.debug("Set file chooser to last directory location");
+				}
 
 				if (fileChooser.showOpenDialog(frame.getOwner()) == JFileChooser.APPROVE_OPTION) {
 					File file = fileChooser.getSelectedFile();
 					if (file != null) {
-
-						String fileExtension = "";
-						String filePath = file.getAbsolutePath();
-						int extensionIndex = filePath.lastIndexOf(".");
-
-						if (extensionIndex != -1)
-							fileExtension = filePath.substring(extensionIndex);
-
-						if (fileExtension.equals(".nc") || fileExtension.equals(".txt")) {
-							RenderUI.this.currentFilePath = filePath;
-							FileLoader fileLoader = new FileLoader(filePath);
-							fileLoader.start();
-						} else {
-							Logger.warn("Invalid file type {}", fileExtension);
-							JOptionPane.showMessageDialog(frame, "File must be of extenstion *.nc", "Invalid File Type",
-									JOptionPane.WARNING_MESSAGE);
-						}
-
+						checkAndLoadFile(file);
 					}
 				} else {
 					Logger.debug("File open cancelled");
@@ -514,6 +581,7 @@ public class RenderUI
 		logFrame.setResizable(false);
 		logFrame.setLocation((int) frame.getLocation().getX() + 800, (int) frame.getLocation().getY());
 		logFrame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+		logFrame.setIconImage(new ImageIcon(getClass().getClassLoader().getResource("res/log_ico.png")).getImage());
 
 		// TODO create a log buffer so memory doesn't run out
 
@@ -590,6 +658,8 @@ public class RenderUI
 		controlFrame.setResizable(false);
 		controlFrame.setLocation((int) frame.getLocation().getX() - 400, (int) frame.getLocation().getY());
 		controlFrame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+		controlFrame.setIconImage(
+				new ImageIcon(getClass().getClassLoader().getResource("res/controls_ico.png")).getImage());
 
 		JPanel controlPanel = new JPanel(new GridLayout(6, 0));
 		playButton = new JButton("Play");
@@ -648,6 +718,8 @@ public class RenderUI
 		this.performPlayback.start();
 		this.animateVertexValues.start();
 
+		setCameraToIsometric();
+
 		logFrame.setVisible(true);
 		controlFrame.setVisible(true);
 		frame.setVisible(true);
@@ -696,8 +768,7 @@ public class RenderUI
 			this.takeScreenshot = false;
 			this.screenshotBuffer.clear();
 			gl.glReadPixels(0, 0, this.glWidth, this.glHeight, GL2.GL_RGB, GL2.GL_BYTE, this.screenshotBuffer);
-			Screenshot s = new Screenshot(this.screenshotBuffer, this.glHeight, this.glWidth);
-			s.start();
+			new Screenshot(this.screenshotBuffer, this.glHeight, this.glWidth, this.screenshotToClipboard).start();
 		}
 
 		gl.glFlush();
@@ -722,10 +793,14 @@ public class RenderUI
 		gl.glDepthFunc(GL2.GL_LEQUAL);
 		gl.glShadeModel(GL2.GL_SMOOTH);
 		gl.glHint(GL2.GL_PERSPECTIVE_CORRECTION_HINT, GL2.GL_NICEST);
-		gl.glEnable(GL2.GL_LINE_SMOOTH);
-		gl.glEnable(GL2.GL_BLEND);
-		gl.glBlendFunc(GL2.GL_SRC_ALPHA, GL2.GL_ONE_MINUS_SRC_ALPHA);
-		gl.glHint(GL2.GL_LINE_SMOOTH_HINT, GL2.GL_NICEST);
+
+		if (Shared.ENABLE_ANTIALIAS) {
+			gl.glEnable(GL2.GL_LINE_SMOOTH);
+			gl.glEnable(GL2.GL_BLEND);
+			gl.glBlendFunc(GL2.GL_SRC_ALPHA, GL2.GL_ONE_MINUS_SRC_ALPHA);
+			gl.glHint(GL2.GL_LINE_SMOOTH_HINT, GL2.GL_NICEST);
+		}
+
 		gl.glClearColor(0f, 0f, 0f, 1f);
 		gl.setSwapInterval((Shared.VSYNC) ? 1 : 0);
 
@@ -762,6 +837,25 @@ public class RenderUI
 			}
 		}).start();
 	}
+	
+	public void checkAndLoadFile(File file) {
+		String fileExtension = "";
+		String filePath = file.getAbsolutePath();
+		int extensionIndex = filePath.lastIndexOf(".");
+
+		if (extensionIndex != -1)
+			fileExtension = filePath.substring(extensionIndex);
+
+		if (fileExtension.equals(".nc") || fileExtension.equals(".txt")) {
+			RenderUI.this.currentFilePath = filePath;
+			FileLoader fileLoader = new FileLoader(filePath);
+			fileLoader.start();
+		} else {
+			Logger.warn("Invalid file type {}", fileExtension);
+			JOptionPane.showMessageDialog(this.frame, "File must be of extenstion *.nc", "Invalid File Type",
+					JOptionPane.WARNING_MESSAGE);
+		}
+	}
 
 	public void exit() {
 		Logger.debug("Window closing...");
@@ -784,8 +878,8 @@ public class RenderUI
 
 	public void setCameraToIsometric() {
 		this.zoomDistance = 130;
-		this.curAngleX = -130f;
-		this.curAngleY = 30f;
+		this.curAngleX = -25f;
+		this.curAngleY = 25f;
 		this.curY = 500;
 		this.curX = 0;
 	}
@@ -901,6 +995,9 @@ public class RenderUI
 			resetCamera();
 		} else if (e.getKeyCode() == KeyEvent.VK_B) {
 			takeScreenshot();
+		} else if (e.getKeyCode() == KeyEvent.VK_N) {
+			this.screenshotToClipboard = !this.screenshotToClipboard;
+			Logger.debug("Screenshot to clipboard: {}", this.screenshotToClipboard);
 		} else {
 			return;
 		}
@@ -955,6 +1052,49 @@ public class RenderUI
 		} catch (BadLocationException e) {
 			e.printStackTrace();
 		}
+	}
+	
+	
+
+	@Override
+	public void drop(DropTargetDropEvent e) {
+		Logger.debug("File dropped");
+		e.acceptDrop(DnDConstants.ACTION_COPY_OR_MOVE);
+		Transferable t = e.getTransferable();
+
+		try {
+			@SuppressWarnings("unchecked")
+			List<File> fileList = (List<File>) t.getTransferData(DataFlavor.javaFileListFlavor);
+			File file = (File) fileList.get(0);
+			checkAndLoadFile(file);
+		} catch (UnsupportedFlavorException e1) {
+			Logger.error("Unsupported flavor: {}", e1);
+		} catch (IOException e2) {
+			Logger.error("IOException: {}", e2);
+		}
+	}
+
+	@Override
+	public void dragEnter(DropTargetDragEvent arg0) {
+		// TODO Auto-generated method stub
+	}
+
+	@Override
+	public void dragExit(DropTargetEvent arg0) {
+		// TODO Auto-generated method stub
+
+	}
+
+	@Override
+	public void dragOver(DropTargetDragEvent arg0) {
+		// TODO Auto-generated method stub
+
+	}
+
+	@Override
+	public void dropActionChanged(DropTargetDragEvent arg0) {
+		// TODO Auto-generated method stub
+
 	}
 
 	@Override

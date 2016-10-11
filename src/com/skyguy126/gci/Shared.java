@@ -10,14 +10,15 @@ public class Shared {
 	public static final boolean DEBUG_MODE = true;
 	public static final boolean VSYNC = true;
 	public static final boolean USE_SYSTEM_LOOK_AND_FEEL = false;
+	public static final boolean ENABLE_ANTIALIAS = true;
 	
 	public static final double PAN_SENSITIVITY_MULTIPLIER = 10.0;
 	public static final double ZOOM_SENSITIVITY_MULTIPLIER = 10.0;
 	public static final double ROTATE_SENSITIVITY_MULTIPLIER = 10.0;
 	public static final double DECREASE_SENSITIVITY_MULTIPLIER = 2.5;
 	
-	public static final int SEGMENT_GENERATION_MULTIPLIER = 50;
-	public static final int ARC_GENERATION_MULTIPLIER = 5;
+	public static final int SEGMENT_GENERATION_MULTIPLIER = 30;
+	public static final int ARC_GENERATION_MULTIPLIER = 3;
 	public static final int SEGMENT_SCALE_MULTIPLIER = 10;
 	
 	public static final long TIME_SCALE = 17;

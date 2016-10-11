@@ -74,7 +74,7 @@ public class Parser {
 
 				// Skip over any blank lines
 				if (currentLine.trim().isEmpty()) {
-					Logger.warn("Empty line at line {}", lineNum);
+					Logger.debug("Empty line at line {}", lineNum);
 					continue;
 				}
 
@@ -345,7 +345,7 @@ public class Parser {
 			}
 
 			if (valid)
-				Logger.info("Parse success!");
+				Logger.debug("Parse success!");
 			else
 				Logger.error("Parse failed!");
 

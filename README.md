@@ -1,17 +1,17 @@
 # GCode Interpreter
 
-##### **(Work in Progress)**
+#### **(Work in Progress)**
 
 --------
 
 ### Currently Planned Feature Set
 * Full 3D viewport (Free rotation, pan, and zoom)
-* Playback (View real-time animation with proper simulation speed)
-* Syntax checking and detailed error reporting
+* Playback (view real-time animation with proper simulation speed)
+* GCode syntax checking and detailed error reporting
 
 ### Screenshots
 
-![](screenshots/screenshot_1.png?raw=true)
+![](screenshots/screenshot_1.png?raw=false)
 
 ### Download
 
@@ -19,5 +19,9 @@ Latest Version - **v0.2a**
 
 *Download coming soon*
 
-#### Dependencies
+#### Dependencies -
 [JOGL](http://jogamp.org/jogl/www/), [TinyLog](http://www.tinylog.org/), [SmartScroller](http://tinyurl.com/zycf3zw)
+
+##### Images and Icons provided by -
+[Google Material Icons](https://design.google.com/icons/),
+[loading.io](http://loading.io)

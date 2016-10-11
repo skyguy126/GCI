@@ -1,2 +1,2 @@
 mkdir bin\res
-xcopy /e res bin\res
+xcopy /e /f res bin\res
