@@ -406,7 +406,8 @@ public class RenderUI
 
 		loadingDialog = new JDialog(frame, "Please Wait...", true);
 		loadingDialog.setDefaultCloseOperation(JDialog.DO_NOTHING_ON_CLOSE);
-		loadingDialog.add(new JLabel("Loading...", new ImageIcon("res/ajax-loader.gif"), JLabel.CENTER));
+		loadingDialog.add(new JLabel("Loading...",
+				new ImageIcon(getClass().getClassLoader().getResource("res/loader.gif")), JLabel.CENTER));
 		loadingDialog.setSize(new Dimension(400, 200));
 		loadingDialog.setLocationRelativeTo(null);
 
