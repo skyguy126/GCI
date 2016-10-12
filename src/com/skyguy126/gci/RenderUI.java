@@ -7,6 +7,7 @@ import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.Frame;
 import java.awt.Graphics;
+import java.awt.GraphicsEnvironment;
 import java.awt.GridLayout;
 import java.awt.Image;
 
@@ -14,6 +15,7 @@ import javax.imageio.ImageIO;
 import javax.swing.ImageIcon;
 import javax.swing.JButton;
 import javax.swing.JDialog;
+import javax.swing.JEditorPane;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
@@ -33,10 +35,15 @@ import javax.swing.text.SimpleAttributeSet;
 import javax.swing.text.StyleConstants;
 import javax.swing.text.StyledDocument;
 
+import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.UnsupportedEncodingException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.ByteBuffer;
@@ -98,9 +105,10 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	private JFrame logFrame;
 	private JFrame controlFrame;
 	private JSlider timeSlider;
-	private JButton playButton;
+	private CustomJButton playButton;
 	private JDialog loadingDialog;
 	private JDialog parseErrorDialog;
+	private JDialog informationDialog;
 	private JTextPane logTextArea;
 
 	private TextRenderer textRenderer;
@@ -136,6 +144,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	private volatile boolean screenshotToClipboard;
 	private volatile boolean isPlaying;
 	private volatile boolean ready;
+	private volatile boolean displayFileDropMessage;
 
 	private volatile ByteBuffer screenshotBuffer;
 	private volatile ArrayList<float[][]> vertexValuesGL;
@@ -164,6 +173,20 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		@Override
 		public void run() {
 			parseErrorDialog.setVisible(true);
+		}
+	};
+
+	private Runnable showInformationDialog = new Runnable() {
+		@Override
+		public void run() {
+			informationDialog.setVisible(true);
+		}
+	};
+
+	private Runnable dismissInformationDialog = new Runnable() {
+		@Override
+		public void run() {
+			informationDialog.setVisible(false);
 		}
 	};
 
@@ -359,7 +382,6 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		@Override
 		public void lostOwnership(Clipboard c, Transferable t) {
 			Logger.debug("Lost clipboard ownership");
-
 		}
 	}
 
@@ -409,6 +431,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		this.screenshotToClipboard = false;
 		this.isPlaying = false;
 		this.ready = false;
+		this.displayFileDropMessage = false;
 
 		this.axisLockText = "Axis Lock: NA";
 		this.decreaseSensitivityText = "Dec Sensitivity: false";
@@ -445,7 +468,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		glcanvas.addMouseWheelListener(this);
 		glcanvas.addMouseMotionListener(this);
 
-		DropTarget dropTarget = new DropTarget(glcanvas, DnDConstants.ACTION_COPY_OR_MOVE, this, true, null);
+		new DropTarget(glcanvas, DnDConstants.ACTION_COPY_OR_MOVE, this, true, null);
 
 		this.glHeight = glcanvas.getHeight();
 		this.glWidth = glcanvas.getWidth();
@@ -475,6 +498,19 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 				controlFrame.setFocusableWindowState(true);
 				logFrame.setFocusableWindowState(true);
 			}
+
+			@Override
+			public void windowIconified(WindowEvent e) {
+				logFrame.setState(JFrame.ICONIFIED);
+				controlFrame.setState(JFrame.ICONIFIED);
+			}
+
+			@Override
+			public void windowDeiconified(WindowEvent e) {
+				logFrame.setState(JFrame.NORMAL);
+				controlFrame.setState(JFrame.NORMAL);
+				frame.requestFocus();
+			}
 		});
 
 		loadingDialog = new JDialog(frame, "Please Wait...", true);
@@ -484,7 +520,62 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		loadingDialog.setSize(new Dimension(400, 200));
 		loadingDialog
 				.setIconImage(new ImageIcon(getClass().getClassLoader().getResource("res/loading_ico.png")).getImage());
-		loadingDialog.setLocationRelativeTo(null);
+		loadingDialog.setLocationRelativeTo(frame);
+
+		informationDialog = new JDialog(frame, "Information", true);
+		informationDialog.setSize(600, 600);
+		informationDialog.setResizable(false);
+		informationDialog.setLocationRelativeTo(frame);
+		informationDialog
+				.setIconImage(new ImageIcon(getClass().getClassLoader().getResource("res/main_ico.png")).getImage());
+		informationDialog.addWindowListener(new WindowAdapter() {
+			@Override
+			public void windowClosing(WindowEvent evt) {
+				runOnNewThread(dismissInformationDialog);
+			}
+		});
+
+		try {
+			BufferedReader infoHtmlReader = new BufferedReader(new InputStreamReader(
+					getClass().getClassLoader().getResourceAsStream("res/info.html"), "UTF-8"));
+
+			infoHtmlReader.mark(1);
+			if (infoHtmlReader.read() != 0xFEFF)
+				infoHtmlReader.reset();
+			else
+				Logger.debug("Removed byte order mark from filestream");
+
+			StringBuffer infoHtml = new StringBuffer();
+			String currentLine;
+
+			while ((currentLine = infoHtmlReader.readLine()) != null) {
+				infoHtml.append(currentLine);
+			}
+
+			infoHtmlReader.close();
+
+			JEditorPane infoPane = new JEditorPane("text/html", infoHtml.toString());
+			infoPane.setSize(600, 600);
+			BufferedImage infoImg = GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice()
+					.getDefaultConfiguration().createCompatibleImage(600, 600);
+			infoPane.print(infoImg.getGraphics());
+
+			@SuppressWarnings("serial")
+			JPanel infoJPanel = new JPanel() {
+				@Override
+				protected void paintComponent(Graphics g) {
+					super.paintComponent(g);
+					g.drawImage(infoImg, 0, 0, null);
+				}
+			};
+
+			informationDialog.add(infoJPanel);
+
+			Logger.debug("Loaded information html");
+		} catch (Exception e) {
+			Logger.error("Error loading information html: {}", e);
+			System.exit(-1);
+		}
 
 		parseErrorDialog = new JDialog(frame, "Error", true);
 		JPanel parseErrorDialogMessagePane = new JPanel();
@@ -507,7 +598,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		parseErrorDialog.setSize(new Dimension(400, 200));
 		parseErrorDialog
 				.setIconImage(new ImageIcon(getClass().getClassLoader().getResource("res/error.png")).getImage());
-		parseErrorDialog.setLocationRelativeTo(null);
+		parseErrorDialog.setLocationRelativeTo(frame);
 		parseErrorDialog.pack();
 
 		menuBar = new MenuBar();
@@ -570,6 +661,12 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		about.add(sourceMenuItem);
 
 		MenuItem infoMenuItem = new MenuItem("Information");
+		infoMenuItem.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				runOnNewThread(showInformationDialog);
+			}
+		});
 		about.add(infoMenuItem);
 
 		menuBar.add(file);
@@ -582,6 +679,20 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		logFrame.setLocation((int) frame.getLocation().getX() + 800, (int) frame.getLocation().getY());
 		logFrame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
 		logFrame.setIconImage(new ImageIcon(getClass().getClassLoader().getResource("res/log_ico.png")).getImage());
+		logFrame.addWindowListener(new WindowAdapter() {
+			@Override
+			public void windowIconified(WindowEvent e) {
+				frame.setState(JFrame.ICONIFIED);
+				controlFrame.setState(JFrame.ICONIFIED);
+			}
+
+			@Override
+			public void windowDeiconified(WindowEvent e) {
+				frame.setState(JFrame.NORMAL);
+				controlFrame.setState(JFrame.NORMAL);
+				frame.requestFocus();
+			}
+		});
 
 		// TODO create a log buffer so memory doesn't run out
 
@@ -660,9 +771,24 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		controlFrame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
 		controlFrame.setIconImage(
 				new ImageIcon(getClass().getClassLoader().getResource("res/controls_ico.png")).getImage());
+		controlFrame.addWindowListener(new WindowAdapter() {
+			@Override
+			public void windowIconified(WindowEvent e) {
+				frame.setState(JFrame.ICONIFIED);
+				logFrame.setState(JFrame.ICONIFIED);
+			}
 
-		JPanel controlPanel = new JPanel(new GridLayout(6, 0));
-		playButton = new JButton("Play");
+			@Override
+			public void windowDeiconified(WindowEvent e) {
+				frame.setState(JFrame.NORMAL);
+				logFrame.setState(JFrame.NORMAL);
+				frame.requestFocus();
+			}
+		});
+
+		JPanel controlPanel = new JPanel(new GridLayout(7, 0));
+		playButton = new CustomJButton("Play");
+		playButton.setFont(Shared.BUTTON_FONT);
 		playButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
@@ -678,9 +804,13 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 				}
 			}
 		});
-		controlPanel.add(playButton);
 
 		timeSlider = new JSlider(JSlider.HORIZONTAL, 0, 1000, 0);
+
+		// TODO new ui
+		// timeSlider.setUI(new CustomSliderUI(timeSlider));
+
+		timeSlider.setBackground(Shared.UI_COLOR);
 		timeSlider.setMajorTickSpacing(100);
 		timeSlider.setMinorTickSpacing(10);
 		timeSlider.setPaintTicks(true);
@@ -693,9 +823,9 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 				Logger.debug("Time slider value changed {}", currentTimePercent);
 			}
 		});
-		controlPanel.add(timeSlider);
 
-		JButton isoButton = new JButton("Isometric View");
+		CustomJButton isoButton = new CustomJButton("Isometric View");
+		isoButton.setFont(Shared.BUTTON_FONT);
 		isoButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent arg0) {
@@ -703,16 +833,65 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 				setCameraToIsometric();
 			}
 		});
-		controlPanel.add(isoButton);
 
-		JButton screenshotButton = new JButton("Screenshot");
+		CustomJButton screenshotButton = new CustomJButton("Screenshot (File)");
+		screenshotButton.setFont(Shared.BUTTON_FONT);
 		screenshotButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
 				takeScreenshot();
 			}
 		});
+
+		CustomJButton switchScreenshotModeButton = new CustomJButton("Switch Screenshot Mode");
+		switchScreenshotModeButton.setFont(Shared.BUTTON_FONT);
+		switchScreenshotModeButton.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				if (RenderUI.this.screenshotToClipboard) {
+					screenshotButton.setText("Screenshot (File)");
+					RenderUI.this.screenshotToClipboard = false;
+				} else {
+					screenshotButton.setText("Screenshot (Clipboard)");
+					RenderUI.this.screenshotToClipboard = true;
+				}
+			}
+		});
+
+		CustomJButton reloadFileButton = new CustomJButton("Reload File");
+		reloadFileButton.setFont(Shared.BUTTON_FONT);
+		reloadFileButton.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				Logger.debug("Reloading file");
+				checkAndLoadFile(new File(RenderUI.this.currentFilePath));
+			}
+		});
+
+		CustomJButton clearButton = new CustomJButton("Clear");
+		clearButton.setFont(Shared.BUTTON_FONT);
+		clearButton.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				ready = false;
+				vertexValues = new ArrayList<float[][]>();
+				vertexValuesGL = new ArrayList<float[][]>();
+				curLineColor = new ArrayList<Color>();
+				spindleSpeedText = new ArrayList<String>();
+				feedRateText = new ArrayList<String>();
+				currentCommandText = new ArrayList<String>();
+				ready = true;
+				Logger.debug("Clearing screen");
+			}
+		});
+
+		controlPanel.add(playButton);
+		controlPanel.add(timeSlider);
+		controlPanel.add(isoButton);
 		controlPanel.add(screenshotButton);
+		controlPanel.add(switchScreenshotModeButton);
+		controlPanel.add(reloadFileButton);
+		controlPanel.add(clearButton);
 		controlFrame.add(controlPanel);
 
 		this.performPlayback.start();
@@ -752,6 +931,10 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		RenderHelpers.renderLine(gl, Color.RED, new float[] { 0f, 0f, 0f }, new float[] { 0f, 40f, 0f }, 5f);
 		RenderHelpers.renderLine(gl, Color.RED, new float[] { 0f, 0f, 0f }, new float[] { 0f, 0f, -40f }, 5f);
 
+		RenderHelpers.render3DText(textRenderer3D, "X", 41, 0, 0, 0.05f);
+		RenderHelpers.render3DText(textRenderer3D, "Z", -1, 41, 0, 0.05f);
+		RenderHelpers.render3DText(textRenderer3D, "Y", -1, 0, -41, 0.05f);
+
 		// TODO change gl line method to connected line not individual segments
 
 		for (int i = 0; i < this.vertexValuesGL.size(); i++) {
@@ -759,9 +942,9 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 					this.vertexValuesGL.get(i)[1], 2.5f);
 		}
 
-		RenderHelpers.render3DText(textRenderer3D, "X", 41, 0, 0, 0.05f);
-		RenderHelpers.render3DText(textRenderer3D, "Z", -1, 41, 0, 0.05f);
-		RenderHelpers.render3DText(textRenderer3D, "Y", -1, 0, -41, 0.05f);
+		if (this.displayFileDropMessage) {
+			RenderHelpers.renderText(textRenderer, "Drop file here.", 10, 10, this.glWidth, this.glHeight);
+		}
 
 		if (this.takeScreenshot) {
 			Logger.info("Taking screenshot...");
@@ -837,7 +1020,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 			}
 		}).start();
 	}
-	
+
 	public void checkAndLoadFile(File file) {
 		String fileExtension = "";
 		String filePath = file.getAbsolutePath();
@@ -935,19 +1118,20 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 
 			// Rotate camera here
 
-			double thetadx = Math.atan((double) dx / 100.0);
-			double thetady = Math.atan((double) dy / 100.0);
+			double thetadx = Math.atan((double) dx / 100.0)
+					* (Shared.ROTATE_SENSITIVITY_MULTIPLIER / getDecreaseSensitivityMultiplier());
+			double thetady = Math.atan((double) dy / 100.0)
+					* (Shared.ROTATE_SENSITIVITY_MULTIPLIER / getDecreaseSensitivityMultiplier());
 
 			// TODO reset angle if over 2pi
 
 			if (lockHorizAxis) {
-				curAngleX += (thetadx) * (Shared.ROTATE_SENSITIVITY_MULTIPLIER / getDecreaseSensitivityMultiplier());
+				curAngleX += thetadx;
 			} else if (lockVertAxis) {
-				curAngleY += (thetady) * (Shared.ROTATE_SENSITIVITY_MULTIPLIER / getDecreaseSensitivityMultiplier());
+				curAngleY += thetady;
 			} else {
-				curAngleX += (thetadx) * (Shared.ROTATE_SENSITIVITY_MULTIPLIER / getDecreaseSensitivityMultiplier());
-
-				curAngleY += (thetady) * (Shared.ROTATE_SENSITIVITY_MULTIPLIER / getDecreaseSensitivityMultiplier());
+				curAngleX += thetadx;
+				curAngleY += thetady;
 			}
 
 			Logger.debug("Rotate - curAngleX: {} curAngleY: {}", curAngleX, curAngleY);
@@ -1053,12 +1237,11 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 			e.printStackTrace();
 		}
 	}
-	
-	
 
 	@Override
 	public void drop(DropTargetDropEvent e) {
 		Logger.debug("File dropped");
+		this.displayFileDropMessage = false;
 		e.acceptDrop(DnDConstants.ACTION_COPY_OR_MOVE);
 		Transferable t = e.getTransferable();
 
@@ -1076,13 +1259,14 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 
 	@Override
 	public void dragEnter(DropTargetDragEvent arg0) {
-		// TODO Auto-generated method stub
+		Logger.debug("Drag entered");
+		this.displayFileDropMessage = true;
 	}
 
 	@Override
 	public void dragExit(DropTargetEvent arg0) {
-		// TODO Auto-generated method stub
-
+		Logger.debug("Drag exited");
+		this.displayFileDropMessage = false;
 	}
 
 	@Override

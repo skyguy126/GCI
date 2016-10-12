@@ -22,6 +22,9 @@ Latest Version - **v0.2a**
 #### Dependencies -
 [JOGL](http://jogamp.org/jogl/www/), [TinyLog](http://www.tinylog.org/), [SmartScroller](http://tinyurl.com/zycf3zw)
 
-##### Images and Icons provided by -
+##### Resources -
 [Google Material Icons](https://design.google.com/icons/),
 [loading.io](http://loading.io)
+
+###### License and Terms
+[License](LICENSE.txt)
