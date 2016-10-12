@@ -784,8 +784,8 @@ public class RenderUI
 
 	public void setCameraToIsometric() {
 		this.zoomDistance = 130;
-		this.curAngleX = -130f;
-		this.curAngleY = 30f;
+		this.curAngleX = -25f;
+		this.curAngleY = 25f;
 		this.curY = 500;
 		this.curX = 0;
 	}
