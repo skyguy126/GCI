@@ -905,7 +905,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		this.performPlayback.start();
 		this.animateVertexValues.start();
 
-		setCameraToIsometric();
+		resetCamera();
 
 		logFrame.setVisible(true);
 		controlFrame.setVisible(true);
@@ -1065,19 +1065,19 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	}
 
 	public void resetCamera() {
-		this.zoomDistance = 100;
+		this.zoomDistance = 80;
 		this.curAngleX = 0;
-		this.curAngleY = 0;
-		this.curX = 0;
-		this.curY = 0;
+		this.curAngleY = 90;
+		this.curX = -1500;
+		this.curY = 1000;
 	}
 
 	public void setCameraToIsometric() {
-		this.zoomDistance = 130;
-		this.curAngleX = -25f;
-		this.curAngleY = 25f;
-		this.curY = 500;
-		this.curX = 0;
+		this.zoomDistance = 90;
+		this.curAngleX = -10f;
+		this.curAngleY = 40f;
+		this.curY = 1500;
+		this.curX = -1500;
 	}
 
 	public double getDecreaseSensitivityMultiplier() {
@@ -1191,10 +1191,12 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		} else if (e.getKeyCode() == KeyEvent.VK_V) {
 			resetCamera();
 		} else if (e.getKeyCode() == KeyEvent.VK_B) {
-			takeScreenshot();
+			setCameraToIsometric();
 		} else if (e.getKeyCode() == KeyEvent.VK_N) {
 			this.screenshotToClipboard = !this.screenshotToClipboard;
 			Logger.debug("Screenshot to clipboard: {}", this.screenshotToClipboard);
+		} else if (e.getKeyCode() == KeyEvent.VK_M) {
+			takeScreenshot();
 		} else {
 			return;
 		}
