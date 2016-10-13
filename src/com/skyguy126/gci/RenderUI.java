@@ -49,6 +49,7 @@ import java.net.URISyntaxException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.locks.ReentrantLock;
 import java.awt.Menu;
 import java.awt.MenuBar;
 import java.awt.MenuItem;
@@ -126,6 +127,8 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	private int glHeight;
 	private int glWidth;
 
+	private ReentrantLock lock;
+
 	private volatile String axisLockText;
 	private volatile String decreaseSensitivityText;
 	private volatile String currentFilePath;
@@ -200,10 +203,14 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 				ArrayList<float[][]> temp = new ArrayList<float[][]>();
 
 				for (int i = 0; i < loopNum; i++) {
-					temp.add(vertexValues.get(i));
+					if (ready)
+						temp.add(vertexValues.get(i));
+					else
+						break;
 				}
 
-				vertexValuesGL = temp;
+				if (ready)
+					vertexValuesGL = temp;
 
 				try {
 					Thread.sleep(Shared.TIME_SCALE);
@@ -447,6 +454,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 
 		this.currentTimePercent = 1.0;
 		this.logFormat = new SimpleAttributeSet();
+		this.lock = new ReentrantLock();
 
 		if (Shared.USE_SYSTEM_LOOK_AND_FEEL) {
 			try {
@@ -536,8 +544,8 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		});
 
 		try {
-			BufferedReader infoHtmlReader = new BufferedReader(new InputStreamReader(
-					getClass().getClassLoader().getResourceAsStream("res/info.html"), "UTF-8"));
+			BufferedReader infoHtmlReader = new BufferedReader(
+					new InputStreamReader(getClass().getClassLoader().getResourceAsStream("res/info.html"), "UTF-8"));
 
 			infoHtmlReader.mark(1);
 			if (infoHtmlReader.read() != 0xFEFF)
@@ -936,10 +944,15 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		RenderHelpers.render3DText(textRenderer3D, "Y", -1, 0, -41, 0.05f);
 
 		// TODO change gl line method to connected line not individual segments
+		// TODO Critical thread sync issues
 
-		for (int i = 0; i < this.vertexValuesGL.size(); i++) {
-			RenderHelpers.renderLine(gl, this.curLineColor.get(i), this.vertexValuesGL.get(i)[0],
-					this.vertexValuesGL.get(i)[1], 2.5f);
+		if (lock.tryLock()) {
+			for (int i = 0; i < this.vertexValuesGL.size(); i++) {
+				RenderHelpers.renderLine(gl, this.curLineColor.get(i), this.vertexValuesGL.get(i)[0],
+						this.vertexValuesGL.get(i)[1], 2.5f);
+			}
+
+			lock.unlock();
 		}
 
 		if (this.displayFileDropMessage) {
