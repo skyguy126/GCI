@@ -7,10 +7,10 @@ import org.pmw.tinylog.Level;
 
 public class Shared {
 	public static final String LOG_FORMAT = "{date} - {level}: {message}";
-	public static final String VERSION = "v0.2a";
+	public static final String VERSION = "v0.3a";
 	public static final String SOURCE_CODE_URL = "https://github.com/skyguy126/GCI";
 
-	public static final boolean DEBUG_MODE = false;
+	public static final boolean DEBUG_MODE = true;
 	public static final boolean VSYNC = true;
 	public static final boolean USE_SYSTEM_LOOK_AND_FEEL = false;
 	public static final boolean ENABLE_ANTIALIAS = true;

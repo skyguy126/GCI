@@ -10,46 +10,6 @@ import java.awt.Graphics;
 import java.awt.GraphicsEnvironment;
 import java.awt.GridLayout;
 import java.awt.Image;
-
-import javax.imageio.ImageIO;
-import javax.swing.ImageIcon;
-import javax.swing.JButton;
-import javax.swing.JDialog;
-import javax.swing.JEditorPane;
-import javax.swing.JFileChooser;
-import javax.swing.JFrame;
-import javax.swing.JLabel;
-import javax.swing.JOptionPane;
-import javax.swing.JPanel;
-import javax.swing.JScrollPane;
-import javax.swing.JSlider;
-import javax.swing.JTextPane;
-import javax.swing.SwingUtilities;
-import javax.swing.UIManager;
-import javax.swing.border.EmptyBorder;
-import javax.swing.event.ChangeEvent;
-import javax.swing.event.ChangeListener;
-import javax.swing.text.BadLocationException;
-import javax.swing.text.DefaultEditorKit;
-import javax.swing.text.SimpleAttributeSet;
-import javax.swing.text.StyleConstants;
-import javax.swing.text.StyledDocument;
-
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.UnsupportedEncodingException;
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.locks.ReentrantLock;
 import java.awt.Menu;
 import java.awt.MenuBar;
 import java.awt.MenuItem;
@@ -77,6 +37,42 @@ import java.awt.event.MouseWheelListener;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.awt.image.BufferedImage;
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.locks.ReentrantLock;
+
+import javax.imageio.ImageIO;
+import javax.swing.ImageIcon;
+import javax.swing.JButton;
+import javax.swing.JDialog;
+import javax.swing.JEditorPane;
+import javax.swing.JFileChooser;
+import javax.swing.JFrame;
+import javax.swing.JLabel;
+import javax.swing.JOptionPane;
+import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.JSlider;
+import javax.swing.JTextPane;
+import javax.swing.SwingUtilities;
+import javax.swing.UIManager;
+import javax.swing.border.EmptyBorder;
+import javax.swing.event.ChangeEvent;
+import javax.swing.event.ChangeListener;
+import javax.swing.text.BadLocationException;
+import javax.swing.text.DefaultEditorKit;
+import javax.swing.text.SimpleAttributeSet;
+import javax.swing.text.StyleConstants;
+import javax.swing.text.StyledDocument;
 
 import org.pmw.tinylog.Configurator;
 import org.pmw.tinylog.Level;
@@ -93,9 +89,7 @@ import com.jogamp.opengl.util.Animator;
 import com.jogamp.opengl.util.awt.TextRenderer;
 
 // TODO
-// Add settings to change mouse sensitivity
 // Switch to float values in gl loop
-// Fix screenshot aspect ratio
 
 public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotionListener, MouseListener, KeyListener,
 		LogWriter, DropTargetListener {
@@ -127,7 +121,8 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	private int glHeight;
 	private int glWidth;
 
-	private ReentrantLock lock;
+	private ReentrantLock glLock;
+	private ReentrantLock animateLock;
 
 	private volatile String axisLockText;
 	private volatile String decreaseSensitivityText;
@@ -146,7 +141,6 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	private volatile boolean takeScreenshot;
 	private volatile boolean screenshotToClipboard;
 	private volatile boolean isPlaying;
-	private volatile boolean ready;
 	private volatile boolean displayFileDropMessage;
 
 	private volatile ByteBuffer screenshotBuffer;
@@ -199,18 +193,16 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 			Logger.debug("Vertex animation thread started");
 
 			while (true) {
+				animateLock.lock();
 				int loopNum = (int) (vertexValues.size() * currentTimePercent);
 				ArrayList<float[][]> temp = new ArrayList<float[][]>();
 
 				for (int i = 0; i < loopNum; i++) {
-					if (ready)
-						temp.add(vertexValues.get(i));
-					else
-						break;
+					temp.add(vertexValues.get(i));
 				}
 
-				if (ready)
-					vertexValuesGL = temp;
+				vertexValuesGL = temp;
+				animateLock.unlock();
 
 				try {
 					Thread.sleep(Shared.TIME_SCALE);
@@ -268,6 +260,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		@Override
 		public void run() {
 			runOnNewThread(showLoadingDialog);
+			stopPlayback();
 
 			Logger.info("Attempting to load: {}", filePath);
 
@@ -296,7 +289,8 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 
 				if (interpSuccess) {
 
-					ready = false;
+					glLock.lock();
+					animateLock.lock();
 
 					vertexValues = interpreter.getVertexValues();
 					curLineColor = interpreter.getCurrentLineColor();
@@ -305,7 +299,8 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 					spindleSpeedText = interpreter.getSpindleSpeedText();
 					currentTimeScale = interpreter.getCurrentTimeScale();
 
-					ready = true;
+					glLock.unlock();
+					animateLock.unlock();
 
 					Logger.info("Loaded file!");
 					runOnNewThread(dismissLoadingDialog);
@@ -437,7 +432,6 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		this.takeScreenshot = false;
 		this.screenshotToClipboard = false;
 		this.isPlaying = false;
-		this.ready = false;
 		this.displayFileDropMessage = false;
 
 		this.axisLockText = "Axis Lock: NA";
@@ -454,7 +448,8 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 
 		this.currentTimePercent = 1.0;
 		this.logFormat = new SimpleAttributeSet();
-		this.lock = new ReentrantLock();
+		this.glLock = new ReentrantLock();
+		this.animateLock = new ReentrantLock();
 
 		if (Shared.USE_SYSTEM_LOOK_AND_FEEL) {
 			try {
@@ -814,14 +809,11 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		});
 
 		timeSlider = new JSlider(JSlider.HORIZONTAL, 0, 1000, 0);
-
-		// TODO new ui
-		// timeSlider.setUI(new CustomSliderUI(timeSlider));
-
+		timeSlider.setUI(new CustomSliderUI(timeSlider));
 		timeSlider.setBackground(Shared.UI_COLOR);
 		timeSlider.setMajorTickSpacing(100);
 		timeSlider.setMinorTickSpacing(10);
-		timeSlider.setPaintTicks(true);
+		timeSlider.setPaintTicks(false);
 		timeSlider.setBorder(new EmptyBorder(0, 10, 0, 10));
 		timeSlider.setValue(timeSlider.getMaximum() - 1);
 		timeSlider.addChangeListener(new ChangeListener() {
@@ -881,15 +873,22 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		clearButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
-				ready = false;
+				stopPlayback();
+
+				glLock.lock();
+				animateLock.lock();
+
 				vertexValues = new ArrayList<float[][]>();
 				vertexValuesGL = new ArrayList<float[][]>();
 				curLineColor = new ArrayList<Color>();
 				spindleSpeedText = new ArrayList<String>();
 				feedRateText = new ArrayList<String>();
 				currentCommandText = new ArrayList<String>();
-				ready = true;
-				Logger.debug("Clearing screen");
+
+				glLock.unlock();
+				animateLock.unlock();
+
+				Logger.debug("Cleared screen");
 			}
 		});
 
@@ -946,13 +945,13 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		// TODO change gl line method to connected line not individual segments
 		// TODO Critical thread sync issues
 
-		if (lock.tryLock()) {
+		if (glLock.tryLock()) {
 			for (int i = 0; i < this.vertexValuesGL.size(); i++) {
 				RenderHelpers.renderLine(gl, this.curLineColor.get(i), this.vertexValuesGL.get(i)[0],
 						this.vertexValuesGL.get(i)[1], 2.5f);
 			}
 
-			lock.unlock();
+			glLock.unlock();
 		}
 
 		if (this.displayFileDropMessage) {
