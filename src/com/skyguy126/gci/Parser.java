@@ -98,6 +98,7 @@ public class Parser {
 
 				// Keep track of commands that need arguments
 				String lastCmd = "";
+				String lastNTag = "";
 
 				// Keep track of the command block number
 				int cmdNum = -1;
@@ -122,8 +123,8 @@ public class Parser {
 						Matcher mm = Pattern.compile("[M]\\d+").matcher(x);
 
 						if (!mg.matches() && !mm.matches()) {
-							Logger.error("Syntax error on line {}. N tag must be followed by a proper G or M tag",
-									lineNum);
+							Logger.error("Syntax error on line {} ({}). N tag must be followed by a proper G or M tag",
+									lineNum, lastNTag);
 							valid = false;
 							break;
 						}
@@ -131,6 +132,7 @@ public class Parser {
 
 					// No need to process the N tag, ignoring that anyways
 					if (cmdNum == 0) {
+						lastNTag = x;
 						continue;
 					}
 
@@ -144,7 +146,8 @@ public class Parser {
 							lastCmd = "";
 							continue;
 						} else {
-							Logger.error("M03 must be followed by S tag indicating spindle speed on line {}", lineNum);
+							Logger.error("M03 must be followed by S tag indicating spindle speed on line {} ({})",
+									lineNum, lastNTag);
 							valid = false;
 							break;
 						}
@@ -168,7 +171,7 @@ public class Parser {
 							} else if (!zExists && x.startsWith("Z")) {
 								zExists = true;
 							} else {
-								Logger.error("X Y or Z can only be defined once on line {}", lineNum);
+								Logger.error("X Y or Z can only be defined once on line {} ({})", lineNum, lastNTag);
 								valid = false;
 								break;
 							}
@@ -185,7 +188,7 @@ public class Parser {
 							} else if (!jExists && x.startsWith("J")) {
 								jExists = true;
 							} else {
-								Logger.error("I or J can only be defined once on line {}", lineNum);
+								Logger.error("I or J can only be defined once on line {} ({})", lineNum, lastNTag);
 								valid = false;
 								break;
 							}
@@ -201,7 +204,7 @@ public class Parser {
 
 						} else {
 
-							Logger.error("Syntax error on line {}", lineNum);
+							Logger.error("Syntax error on line {} ({})", lineNum, lastNTag);
 							valid = false;
 							break;
 
@@ -295,7 +298,7 @@ public class Parser {
 						if (x.startsWith("T")) {
 							Logger.debug("Ignoring T tag on line {}, block {}", lineNum, cmdNum);
 						} else {
-							Logger.error("Invalid code on line {} block {}", lineNum, cmdNum);
+							Logger.error("Invalid code on line {} block {} ({})", lineNum, cmdNum, lastNTag);
 							valid = false;
 							loopExit = true;
 							break;
@@ -312,7 +315,8 @@ public class Parser {
 				// Make sure X Y or Z tag was given for G00 and G01
 				if (lastCmdExists && (lastCmd.equals("G00") || lastCmd.equals("G01"))) {
 					if (!(xExists || yExists || zExists) || (iExists || jExists)) {
-						Logger.error("{} must be supplied with X Y or Z tag on line {}", lastCmd, lineNum);
+						Logger.error("{} must be supplied with X Y or Z tag on line {} ({})", lastCmd, lineNum,
+								lastNTag);
 						valid = false;
 					}
 				}
@@ -320,7 +324,7 @@ public class Parser {
 				// Make sure I and J tag was given for G02 and G03
 				if (lastCmdExists && (lastCmd.equals("G02") || lastCmd.equals("G03"))) {
 					if (zExists || !(iExists && jExists)) {
-						Logger.error("{} must be supplied with I and J tag on line {}", lastCmd, lineNum);
+						Logger.error("{} must be supplied with I and J tag on line {} ({})", lastCmd, lineNum, lastNTag);
 						valid = false;
 					}
 				}

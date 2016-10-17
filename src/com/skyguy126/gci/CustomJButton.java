@@ -8,20 +8,22 @@ import javax.swing.JButton;
 
 @SuppressWarnings("serial")
 public class CustomJButton extends JButton {
-	CustomJButton(String title) {
+
+	public CustomJButton(String title) {
 		super(title);
 		setContentAreaFilled(false);
 		super.setForeground(Color.WHITE);
+		super.setFocusPainted(false);
 	}
-	
-	@Override
-    protected void paintComponent(Graphics g) {
-        final Graphics2D g2 = (Graphics2D) g.create();
-        
-        g2.setPaint(Shared.UI_COLOR);
-        g2.fillRect(0, 0, getWidth(), getHeight());
-        g2.dispose();
 
-        super.paintComponent(g);
-    }
+	@Override
+	protected void paintComponent(Graphics g) {
+		final Graphics2D g2d = (Graphics2D) g.create();
+
+		g2d.setPaint(Shared.UI_COLOR);
+		g2d.fillRect(0, 0, getWidth(), getHeight());
+		g2d.dispose();
+
+		super.paintComponent(g);
+	}
 }

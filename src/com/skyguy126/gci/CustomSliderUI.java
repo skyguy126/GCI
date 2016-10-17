@@ -62,11 +62,10 @@ public class CustomSliderUI extends BasicSliderUI {
 	protected void scrollDueToClickInTrack(int direction) {
 		int value = slider.getValue();
 
-		if (slider.getOrientation() == JSlider.HORIZONTAL) {
-			value = this.valueForXPosition(slider.getMousePosition().x);
-		} else if (slider.getOrientation() == JSlider.VERTICAL) {
-			value = this.valueForYPosition(slider.getMousePosition().y);
-		}
+		if (slider.getOrientation() == JSlider.HORIZONTAL)
+			value = valueForXPosition(slider.getMousePosition().x);
+		else if (slider.getOrientation() == JSlider.VERTICAL)
+			value = valueForYPosition(slider.getMousePosition().y);
 
 		slider.setValue(value);
 	}

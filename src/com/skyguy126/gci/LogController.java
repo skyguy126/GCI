@@ -42,6 +42,9 @@ public class LogController implements Writer {
 	@Override
 	public void write(LogEntry entry) throws Exception {
 		String logEntry = entry.getLevel() + " - " + entry.getMessage();
+		
+		// TODO Put these on a new thread
+		
 		System.out.println(entry.getDate() + ": " + logEntry);
 		logWriter.appendToLog(logEntry, entry.getLevel());		
 	}

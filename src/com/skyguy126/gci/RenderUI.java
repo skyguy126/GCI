@@ -13,10 +13,12 @@ import java.awt.Image;
 import java.awt.Menu;
 import java.awt.MenuBar;
 import java.awt.MenuItem;
+import java.awt.Rectangle;
 import java.awt.Toolkit;
 import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.ClipboardOwner;
 import java.awt.datatransfer.DataFlavor;
+import java.awt.datatransfer.StringSelection;
 import java.awt.datatransfer.Transferable;
 import java.awt.datatransfer.UnsupportedFlavorException;
 import java.awt.dnd.DnDConstants;
@@ -48,6 +50,7 @@ import java.net.URISyntaxException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.locks.ReentrantLock;
 
 import javax.imageio.ImageIO;
@@ -58,8 +61,10 @@ import javax.swing.JEditorPane;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
+import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
 import javax.swing.JSlider;
 import javax.swing.JTextPane;
@@ -68,6 +73,8 @@ import javax.swing.UIManager;
 import javax.swing.border.EmptyBorder;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
+import javax.swing.event.PopupMenuEvent;
+import javax.swing.event.PopupMenuListener;
 import javax.swing.text.BadLocationException;
 import javax.swing.text.DefaultEditorKit;
 import javax.swing.text.SimpleAttributeSet;
@@ -100,6 +107,8 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	private JFrame logFrame;
 	private JFrame controlFrame;
 	private JSlider timeSlider;
+	private JSlider generationMultiplierSlider;
+	private JSlider scaleSlider;
 	private CustomJButton playButton;
 	private JDialog loadingDialog;
 	private JDialog parseErrorDialog;
@@ -299,8 +308,8 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 					spindleSpeedText = interpreter.getSpindleSpeedText();
 					currentTimeScale = interpreter.getCurrentTimeScale();
 
-					glLock.unlock();
 					animateLock.unlock();
+					glLock.unlock();
 
 					Logger.info("Loaded file!");
 					runOnNewThread(dismissLoadingDialog);
@@ -414,10 +423,9 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		}
 	}
 
-	public RenderUI() {
+	public RenderUI(CountDownLatch status) {
 		Configurator.defaultConfig().writer(new LogController(this)).formatPattern(Shared.LOG_FORMAT)
 				.level(Shared.LOG_LEVEL).activate();
-
 		Logger.debug("RUI initiated");
 
 		this.zoomDistance = 100;
@@ -479,7 +487,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 
 		frame = new Frame("GCI - " + Shared.VERSION);
 		frame.setSize(800, 800);
-		frame.setResizable(false);
+		frame.setResizable(true);
 		frame.add(glcanvas);
 		frame.setLocationRelativeTo(null);
 		frame.setIconImage(new ImageIcon(getClass().getClassLoader().getResource("res/main_ico.png")).getImage());
@@ -644,6 +652,28 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 
 		file.add(openMenuItem);
 		file.add(exitMenuItem);
+		
+		Menu window = new Menu("Window");
+		MenuItem resetLayoutItem = new MenuItem("Reset Window Layout");
+		resetLayoutItem.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				Logger.debug("Resetting window layout...");
+				resetWindowLayout();
+			}
+		});
+		
+		MenuItem fullscreenItem = new MenuItem("Fullscreen Layout");
+		fullscreenItem.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				setFullscreenWindowLayout();
+				Logger.debug("Set to fullscreen mode");
+			}
+		});
+		
+		window.add(fullscreenItem);
+		window.add(resetLayoutItem);
 
 		Menu about = new Menu("About");
 		MenuItem sourceMenuItem = new MenuItem("Source Code");
@@ -661,7 +691,6 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 				}
 			}
 		});
-		about.add(sourceMenuItem);
 
 		MenuItem infoMenuItem = new MenuItem("Information");
 		infoMenuItem.addActionListener(new ActionListener() {
@@ -670,16 +699,19 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 				runOnNewThread(showInformationDialog);
 			}
 		});
+
+		about.add(sourceMenuItem);
 		about.add(infoMenuItem);
 
 		menuBar.add(file);
+		menuBar.add(window);
 		menuBar.add(about);
 		frame.setMenuBar(menuBar);
 
 		logFrame = new JFrame("Log");
 		logFrame.setSize(400, 800);
-		logFrame.setResizable(false);
 		logFrame.setLocation((int) frame.getLocation().getX() + 800, (int) frame.getLocation().getY());
+		logFrame.setResizable(true);
 		logFrame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
 		logFrame.setIconImage(new ImageIcon(getClass().getClassLoader().getResource("res/log_ico.png")).getImage());
 		logFrame.addWindowListener(new WindowAdapter() {
@@ -766,11 +798,39 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		taskMenu.add(saveMenuItem);
 		logMenuBar.add(taskMenu);
 		logFrame.setMenuBar(logMenuBar);
+		
+		JPopupMenu logPopupMenu = new JPopupMenu();
+		JMenuItem copyMenuItem = new JMenuItem("Copy");
+		copyMenuItem.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				String selectedText = logTextArea.getSelectedText();
+				if (selectedText != null) {
+					StringSelection text = new StringSelection(selectedText);
+					Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+					clipboard.setContents(text, text);
+					Logger.debug("Copied to clipboard");
+				}
+			}
+		});
+		
+		JMenuItem selectAllItem = new JMenuItem("Select All");
+		selectAllItem.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				logTextArea.selectAll();
+				Logger.debug("Select all");
+			}
+		});
+		
+		logPopupMenu.add(copyMenuItem);
+		logPopupMenu.add(selectAllItem);		
+		logTextArea.setComponentPopupMenu(logPopupMenu);
 
 		controlFrame = new JFrame("Controls");
 		controlFrame.setSize(400, 800);
-		controlFrame.setResizable(false);
 		controlFrame.setLocation((int) frame.getLocation().getX() - 400, (int) frame.getLocation().getY());
+		controlFrame.setResizable(true);
 		controlFrame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
 		controlFrame.setIconImage(
 				new ImageIcon(getClass().getClassLoader().getResource("res/controls_ico.png")).getImage());
@@ -789,7 +849,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 			}
 		});
 
-		JPanel controlPanel = new JPanel(new GridLayout(7, 0));
+		JPanel controlPanel = new JPanel(new GridLayout(10, 0));
 		playButton = new CustomJButton("Play");
 		playButton.setFont(Shared.BUTTON_FONT);
 		playButton.addActionListener(new ActionListener() {
@@ -808,19 +868,84 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 			}
 		});
 
-		timeSlider = new JSlider(JSlider.HORIZONTAL, 0, 1000, 0);
+		timeSlider = new JSlider(JSlider.HORIZONTAL, 0, 1000, 1000);
 		timeSlider.setUI(new CustomSliderUI(timeSlider));
 		timeSlider.setBackground(Shared.UI_COLOR);
-		timeSlider.setMajorTickSpacing(100);
-		timeSlider.setMinorTickSpacing(10);
 		timeSlider.setPaintTicks(false);
-		timeSlider.setBorder(new EmptyBorder(0, 10, 0, 10));
-		timeSlider.setValue(timeSlider.getMaximum() - 1);
+		timeSlider.setBorder(new EmptyBorder(0, 20, 0, 20));
 		timeSlider.addChangeListener(new ChangeListener() {
 			@Override
 			public void stateChanged(ChangeEvent e) {
 				currentTimePercent = (double) timeSlider.getValue() / (double) timeSlider.getMaximum();
 				Logger.debug("Time slider value changed {}", currentTimePercent);
+			}
+		});
+
+		JPanel timePanel = new JPanel(new BorderLayout());
+		JLabel timeDes = new JLabel("", new ImageIcon(getClass().getClassLoader().getResource("res/time_ico.png")),
+				JLabel.CENTER);
+
+		timeDes.setBorder(new EmptyBorder(0, 20, 0, 0));
+		timePanel.setBackground(Shared.UI_COLOR);
+		timePanel.add(timeDes, BorderLayout.WEST);
+		timePanel.add(timeSlider, BorderLayout.CENTER);
+
+		// TODO adjust arc generation time scale as scale value is changed
+		// disable sliders when values are being generated
+
+		scaleSlider = new JSlider(JSlider.HORIZONTAL, 1, 25, Shared.SEGMENT_SCALE_MULTIPLIER);
+		scaleSlider.setEnabled(false);
+		scaleSlider.setUI(new CustomSliderUI(scaleSlider));
+		scaleSlider.setBackground(Shared.UI_COLOR);
+		scaleSlider.setPaintTicks(false);
+		scaleSlider.setBorder(new EmptyBorder(0, 20, 0, 20));
+		scaleSlider.addChangeListener(new ChangeListener() {
+			@Override
+			public void stateChanged(ChangeEvent e) {
+				Shared.SEGMENT_SCALE_MULTIPLIER = scaleSlider.getValue();
+				Logger.debug("Scale slider value changed {}", scaleSlider.getValue());
+			}
+		});
+
+		JPanel scalePanel = new JPanel(new BorderLayout());
+		JLabel scaleDes = new JLabel("", new ImageIcon(getClass().getClassLoader().getResource("res/scale_ico.png")),
+				JLabel.CENTER);
+
+		scaleDes.setBorder(new EmptyBorder(0, 20, 0, 0));
+		scalePanel.setBackground(Shared.UI_COLOR);
+		scalePanel.add(scaleDes, BorderLayout.WEST);
+		scalePanel.add(scaleSlider, BorderLayout.CENTER);
+
+		generationMultiplierSlider = new JSlider(JSlider.HORIZONTAL, 10, 50, Shared.SEGMENT_GENERATION_MULTIPLIER);
+		generationMultiplierSlider.setEnabled(false);
+		generationMultiplierSlider.setUI(new CustomSliderUI(generationMultiplierSlider));
+		generationMultiplierSlider.setBackground(Shared.UI_COLOR);
+		generationMultiplierSlider.setPaintTicks(false);
+		generationMultiplierSlider.setBorder(new EmptyBorder(0, 20, 0, 20));
+		generationMultiplierSlider.addChangeListener(new ChangeListener() {
+			@Override
+			public void stateChanged(ChangeEvent e) {
+				Shared.SEGMENT_GENERATION_MULTIPLIER = generationMultiplierSlider.getValue();
+				Logger.debug("Generation slider value changed {}", generationMultiplierSlider.getValue());
+			}
+		});
+
+		JPanel genPanel = new JPanel(new BorderLayout());
+		JLabel genDes = new JLabel("", new ImageIcon(getClass().getClassLoader().getResource("res/gen_ico.png")),
+				JLabel.CENTER);
+
+		genDes.setBorder(new EmptyBorder(0, 20, 0, 0));
+		genPanel.setBackground(Shared.UI_COLOR);
+		genPanel.add(genDes, BorderLayout.WEST);
+		genPanel.add(generationMultiplierSlider, BorderLayout.CENTER);
+
+		CustomJButton defButton = new CustomJButton("Default View");
+		defButton.setFont(Shared.BUTTON_FONT);
+		defButton.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent arg0) {
+				Logger.debug("Setting camera to default top view");
+				resetCamera();
 			}
 		});
 
@@ -858,7 +983,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 			}
 		});
 
-		CustomJButton reloadFileButton = new CustomJButton("Reload File");
+		CustomJButton reloadFileButton = new CustomJButton("Reload");
 		reloadFileButton.setFont(Shared.BUTTON_FONT);
 		reloadFileButton.addActionListener(new ActionListener() {
 			@Override
@@ -893,18 +1018,22 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		});
 
 		controlPanel.add(playButton);
-		controlPanel.add(timeSlider);
+		controlPanel.add(timePanel);
+		controlPanel.add(defButton);
 		controlPanel.add(isoButton);
 		controlPanel.add(screenshotButton);
 		controlPanel.add(switchScreenshotModeButton);
 		controlPanel.add(reloadFileButton);
 		controlPanel.add(clearButton);
+		controlPanel.add(scalePanel);
+		controlPanel.add(genPanel);
 		controlFrame.add(controlPanel);
 
 		this.performPlayback.start();
 		this.animateVertexValues.start();
 
 		resetCamera();
+		status.countDown();
 
 		logFrame.setVisible(true);
 		controlFrame.setVisible(true);
@@ -922,6 +1051,11 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		isPlaying = false;
 		playButton.setText("Play");
 		timeSlider.setEnabled(true);
+	}
+
+	private void unlockScaleAndGenSliders() {
+		scaleSlider.setEnabled(true);
+		generationMultiplierSlider.setEnabled(true);
 	}
 
 	@Override
@@ -943,7 +1077,6 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		RenderHelpers.render3DText(textRenderer3D, "Y", -1, 0, -41, 0.05f);
 
 		// TODO change gl line method to connected line not individual segments
-		// TODO Critical thread sync issues
 
 		if (glLock.tryLock()) {
 			for (int i = 0; i < this.vertexValuesGL.size(); i++) {
@@ -1008,8 +1141,12 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	@Override
 	public void reshape(GLAutoDrawable glad, int x, int y, int width, int height) {
 		GL2 gl = glad.getGL().getGL2();
+		gl.glMatrixMode(GL2.GL_PROJECTION);
+		gl.glLoadIdentity();
 		gl.glViewport(x, y, width, height);
-		Logger.debug("GL reshape");
+		glu.gluPerspective(45, (double) width / (double) height, 1, 1000);
+		gl.glMatrixMode(GL2.GL_MODELVIEW);
+		gl.glLoadIdentity();
 	}
 
 	public void setCamera(GL2 gl, GLU glu) {
@@ -1025,12 +1162,12 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	}
 
 	public void runOnNewThread(Runnable r) {
-		(new Thread() {
+		new Thread() {
 			@Override
 			public void run() {
 				r.run();
 			}
-		}).start();
+		}.start();
 	}
 
 	public void checkAndLoadFile(File file) {
@@ -1060,6 +1197,8 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 
 		frame.remove(glcanvas);
 		frame.dispose();
+		logFrame.dispose();
+		controlFrame.dispose();
 		System.exit(0);
 	}
 
@@ -1067,16 +1206,39 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		this.zoomDistance = 80;
 		this.curAngleX = 0;
 		this.curAngleY = 90;
-		this.curX = -1500;
-		this.curY = 1000;
+		this.curX = -1360;
+		this.curY = 1240;
 	}
 
 	public void setCameraToIsometric() {
-		this.zoomDistance = 90;
+		this.zoomDistance = 80;
 		this.curAngleX = -10f;
 		this.curAngleY = 40f;
-		this.curY = 1500;
-		this.curX = -1500;
+		this.curX = -1720;
+		this.curY = 1810;
+	}
+	
+	public void resetWindowLayout() {
+		frame.setSize(800, 800);
+		frame.setLocationRelativeTo(null);
+		logFrame.setSize(400, 800);
+		logFrame.setLocation((int) frame.getLocation().getX() + 800, (int) frame.getLocation().getY());
+		controlFrame.setSize(400, 800);
+		controlFrame.setLocation((int) frame.getLocation().getX() - 400, (int) frame.getLocation().getY());
+	}
+	
+	public void setFullscreenWindowLayout() {
+		Rectangle screenSize = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
+		int width = (int) screenSize.getWidth();
+		int height = (int) screenSize.getHeight();
+		int qWidth = width / 4;
+		
+		controlFrame.setSize(qWidth, height);
+		controlFrame.setLocation(0, 0);
+		frame.setSize(qWidth * 2, height);
+		frame.setLocation(qWidth, 0);
+		logFrame.setSize(qWidth, height);
+		logFrame.setLocation(qWidth * 3, 0);
 	}
 
 	public double getDecreaseSensitivityMultiplier() {
@@ -1124,7 +1286,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 				curY += (dy / getDecreaseSensitivityMultiplier());
 			}
 
-			Logger.debug("Drag - dx: {} dy: {}", dx, dy);
+			Logger.debug("Drag - curX: {} curY: {}", curX, curY);
 
 		} else if (SwingUtilities.isLeftMouseButton(e)) {
 
@@ -1178,6 +1340,9 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 
 	@Override
 	public void keyPressed(KeyEvent e) {
+		
+		Logger.debug("Key pressed: {}", e.getKeyChar());
+		
 		if (!lockHorizAxis && e.getKeyCode() == KeyEvent.VK_Z) {
 			lockHorizAxis = true;
 			this.axisLockText = "Axis Lock: X";
@@ -1196,11 +1361,13 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 			Logger.debug("Screenshot to clipboard: {}", this.screenshotToClipboard);
 		} else if (e.getKeyCode() == KeyEvent.VK_M) {
 			takeScreenshot();
+		} else if (e.getKeyCode() == KeyEvent.VK_L) {
+			unlockScaleAndGenSliders();
+			Logger.info("Unlocked sliders");
+			Logger.info("Reload after changing values");
 		} else {
 			return;
 		}
-
-		Logger.debug("Key pressed: {}", e.getKeyChar());
 	}
 
 	@Override
@@ -1272,43 +1439,43 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	}
 
 	@Override
-	public void dragEnter(DropTargetDragEvent arg0) {
+	public void dragEnter(DropTargetDragEvent e) {
 		Logger.debug("Drag entered");
 		this.displayFileDropMessage = true;
 	}
 
 	@Override
-	public void dragExit(DropTargetEvent arg0) {
+	public void dragExit(DropTargetEvent e) {
 		Logger.debug("Drag exited");
 		this.displayFileDropMessage = false;
 	}
 
 	@Override
-	public void dragOver(DropTargetDragEvent arg0) {
+	public void dragOver(DropTargetDragEvent e) {
 		// TODO Auto-generated method stub
 
 	}
 
 	@Override
-	public void dropActionChanged(DropTargetDragEvent arg0) {
+	public void dropActionChanged(DropTargetDragEvent e) {
 		// TODO Auto-generated method stub
 
 	}
 
 	@Override
-	public void mouseClicked(MouseEvent arg0) {
+	public void mouseClicked(MouseEvent e) {
 		// TODO Auto-generated method stub
 
 	}
 
 	@Override
-	public void mouseEntered(MouseEvent arg0) {
+	public void mouseEntered(MouseEvent e) {
 		// TODO Auto-generated method stub
 
 	}
 
 	@Override
-	public void mouseExited(MouseEvent arg0) {
+	public void mouseExited(MouseEvent e) {
 		// TODO Auto-generated method stub
 
 	}
@@ -1323,9 +1490,5 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	public void keyTyped(KeyEvent e) {
 		// TODO Auto-generated method stub
 
-	}
-
-	public static void main(String[] args) {
-		new RenderUI();
 	}
 }

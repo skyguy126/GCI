@@ -20,14 +20,13 @@ public class Shared {
 	public static final double ROTATE_SENSITIVITY_MULTIPLIER = 10.0;
 	public static final double DECREASE_SENSITIVITY_MULTIPLIER = 2.5;
 
-	public static final int SEGMENT_GENERATION_MULTIPLIER = 30;
+	public static volatile int SEGMENT_SCALE_MULTIPLIER = 10;
+	public static volatile int SEGMENT_GENERATION_MULTIPLIER = 30;
 	public static final int ARC_GENERATION_MULTIPLIER = 3;
-	public static final int SEGMENT_SCALE_MULTIPLIER = 10;
-
+	
 	public static final long TIME_SCALE = 17;
 
 	public static final Level LOG_LEVEL = (DEBUG_MODE) ? Level.DEBUG : Level.INFO;
-	
 	public static final Font BUTTON_FONT = new Font("Arial", Font.PLAIN, 20);
 	public static final Color UI_COLOR = new Color(69, 90, 100);
 }
