@@ -15,7 +15,7 @@
 
 ### Download
 
-Latest Version - **v0.2a**
+Latest Version - **v0.3a**
 
 *Download coming soon*
 

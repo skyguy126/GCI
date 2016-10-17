@@ -525,12 +525,22 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		});
 
 		loadingDialog = new JDialog(frame, "Please Wait...", true);
+		
+		JPanel loadingDialogPanel = new JPanel();
+		JLabel loadingDialogLabel = new JLabel("Loading...",
+				new ImageIcon(getClass().getClassLoader().getResource("res/launch.gif")), JLabel.CENTER);
+		
+		loadingDialogPanel.setBackground(Shared.UI_COLOR);
+		loadingDialogPanel.setBorder(new EmptyBorder(20, 20, 20, 20));
+		loadingDialogLabel.setFont(Shared.BUTTON_FONT);
+		loadingDialogLabel.setForeground(Color.WHITE);
+		loadingDialog.setBackground(Shared.UI_COLOR);
 		loadingDialog.setDefaultCloseOperation(JDialog.DO_NOTHING_ON_CLOSE);
-		loadingDialog.add(new JLabel("Loading...",
-				new ImageIcon(getClass().getClassLoader().getResource("res/loader.gif")), JLabel.CENTER));
-		loadingDialog.setSize(new Dimension(400, 200));
 		loadingDialog
 				.setIconImage(new ImageIcon(getClass().getClassLoader().getResource("res/loading_ico.png")).getImage());
+		loadingDialogPanel.add(loadingDialogLabel);
+		loadingDialog.add(loadingDialogPanel);
+		loadingDialog.pack();
 		loadingDialog.setLocationRelativeTo(frame);
 
 		informationDialog = new JDialog(frame, "Information", true);
@@ -589,12 +599,11 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		}
 
 		parseErrorDialog = new JDialog(frame, "Error", true);
+
 		JPanel parseErrorDialogMessagePane = new JPanel();
 		JPanel parseErrorDialogButtonPane = new JPanel();
-
-		parseErrorDialogMessagePane.add(new JLabel("Error loading file. See log for more details.",
-				new ImageIcon(getClass().getClassLoader().getResource("res/error.png")), JLabel.CENTER));
-
+		JLabel parseErrorMessageLabel = new JLabel("Error loading file. See log for more details.",
+				new ImageIcon(getClass().getClassLoader().getResource("res/error.png")), JLabel.CENTER);
 		JButton parseErrorDialogButton = new JButton("Ok");
 		parseErrorDialogButton.addActionListener(new ActionListener() {
 			@Override
@@ -602,13 +611,19 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 				parseErrorDialog.setVisible(false);
 			}
 		});
+
+		parseErrorMessageLabel.setForeground(Color.WHITE);
+		parseErrorMessageLabel.setFont(Shared.BUTTON_FONT);
+		parseErrorDialogMessagePane.add(parseErrorMessageLabel);
+		parseErrorDialogMessagePane.setBackground(Shared.UI_COLOR);
 		parseErrorDialogButtonPane.add(parseErrorDialogButton);
+		parseErrorDialogButtonPane.setBackground(Shared.UI_COLOR);
 
 		parseErrorDialog.add(parseErrorDialogMessagePane);
 		parseErrorDialog.add(parseErrorDialogButtonPane, BorderLayout.SOUTH);
 		parseErrorDialog.setSize(new Dimension(400, 200));
 		parseErrorDialog
-				.setIconImage(new ImageIcon(getClass().getClassLoader().getResource("res/error.png")).getImage());
+				.setIconImage(new ImageIcon(getClass().getClassLoader().getResource("res/error_dark.png")).getImage());
 		parseErrorDialog.setLocationRelativeTo(frame);
 		parseErrorDialog.pack();
 
@@ -652,7 +667,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 
 		file.add(openMenuItem);
 		file.add(exitMenuItem);
-		
+
 		Menu window = new Menu("Window");
 		MenuItem resetLayoutItem = new MenuItem("Reset Window Layout");
 		resetLayoutItem.addActionListener(new ActionListener() {
@@ -662,7 +677,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 				resetWindowLayout();
 			}
 		});
-		
+
 		MenuItem fullscreenItem = new MenuItem("Fullscreen Layout");
 		fullscreenItem.addActionListener(new ActionListener() {
 			@Override
@@ -671,7 +686,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 				Logger.debug("Set to fullscreen mode");
 			}
 		});
-		
+
 		window.add(fullscreenItem);
 		window.add(resetLayoutItem);
 
@@ -798,7 +813,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		taskMenu.add(saveMenuItem);
 		logMenuBar.add(taskMenu);
 		logFrame.setMenuBar(logMenuBar);
-		
+
 		JPopupMenu logPopupMenu = new JPopupMenu();
 		JMenuItem copyMenuItem = new JMenuItem("Copy");
 		copyMenuItem.addActionListener(new ActionListener() {
@@ -813,7 +828,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 				}
 			}
 		});
-		
+
 		JMenuItem selectAllItem = new JMenuItem("Select All");
 		selectAllItem.addActionListener(new ActionListener() {
 			@Override
@@ -822,9 +837,9 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 				Logger.debug("Select all");
 			}
 		});
-		
+
 		logPopupMenu.add(copyMenuItem);
-		logPopupMenu.add(selectAllItem);		
+		logPopupMenu.add(selectAllItem);
 		logTextArea.setComponentPopupMenu(logPopupMenu);
 
 		controlFrame = new JFrame("Controls");
@@ -1217,7 +1232,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		this.curX = -1720;
 		this.curY = 1810;
 	}
-	
+
 	public void resetWindowLayout() {
 		frame.setSize(800, 800);
 		frame.setLocationRelativeTo(null);
@@ -1226,13 +1241,13 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		controlFrame.setSize(400, 800);
 		controlFrame.setLocation((int) frame.getLocation().getX() - 400, (int) frame.getLocation().getY());
 	}
-	
+
 	public void setFullscreenWindowLayout() {
 		Rectangle screenSize = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
 		int width = (int) screenSize.getWidth();
 		int height = (int) screenSize.getHeight();
 		int qWidth = width / 4;
-		
+
 		controlFrame.setSize(qWidth, height);
 		controlFrame.setLocation(0, 0);
 		frame.setSize(qWidth * 2, height);
@@ -1340,9 +1355,9 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 
 	@Override
 	public void keyPressed(KeyEvent e) {
-		
+
 		Logger.debug("Key pressed: {}", e.getKeyChar());
-		
+
 		if (!lockHorizAxis && e.getKeyCode() == KeyEvent.VK_Z) {
 			lockHorizAxis = true;
 			this.axisLockText = "Axis Lock: X";
