@@ -229,6 +229,8 @@ public class Interpreter {
 				if (curZ != lastZ)
 					Logger.warn("Ramping detected");
 
+				Logger.debug("---------- BEGIN VERTEX ARRAY ----------");
+
 				for (int x = 0; x < totalArcSegments; x++) {
 					float[][] vertexArray = new float[2][3];
 
@@ -262,13 +264,11 @@ public class Interpreter {
 
 				}
 
-				// TODO arc generation
-				// Reset last coordinates for next cycle
 				Logger.debug("---------- END VERTEX ARRAY ----------");
+
 				lastX = curX;
 				lastY = curY;
 				lastZ = curZ;
-
 				break;
 			default:
 				Logger.error("Error at command {}", curCmd);
@@ -276,8 +276,8 @@ public class Interpreter {
 			}
 		}
 
-		Logger.debug("Vertex array size: {} Total ticks: {} TimeScale Size: {}", this.vertexValues.size(),
-				this.totalTicks, this.currentTimeScale.size());
+		Logger.debug("Vertex array size: {} Total ticks: {} TimeScale Size: {} Color size: {}",
+				this.vertexValues.size(), this.totalTicks, this.currentTimeScale.size(), this.currentLineColor.size());
 		return true;
 	}
 

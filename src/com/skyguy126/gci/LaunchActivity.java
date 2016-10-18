@@ -18,7 +18,7 @@ public class LaunchActivity {
 
 		splashContent.setForeground(Color.WHITE);
 		splashContent.setFont(Shared.BUTTON_FONT);
-		splashContent.setBorder(new EmptyBorder(20, 20, 20, 20));
+		splashContent.setBorder(new EmptyBorder(20, 5, 20, 20));
 
 		splash.setAlwaysOnTop(true);
 		splash.getContentPane().setBackground(Shared.UI_COLOR);

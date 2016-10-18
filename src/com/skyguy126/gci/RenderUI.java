@@ -301,6 +301,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 					glLock.lock();
 					animateLock.lock();
 
+					vertexValuesGL = new ArrayList<float[][]>();
 					vertexValues = interpreter.getVertexValues();
 					curLineColor = interpreter.getCurrentLineColor();
 					feedRateText = interpreter.getFeedRateText();
@@ -310,13 +311,13 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 
 					animateLock.unlock();
 					glLock.unlock();
-
+					
 					Logger.info("Loaded file!");
-					runOnNewThread(dismissLoadingDialog);
 				}
 			}
 
 			runOnNewThread(dismissLoadingDialog);
+
 			if (!parseSuccess || !interpSuccess)
 				runOnNewThread(showParseErrorDialog);
 		}
@@ -505,6 +506,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 				logFrame.setFocusableWindowState(false);
 				controlFrame.toFront();
 				logFrame.toFront();
+				frame.toFront();
 				frame.requestFocus();
 				controlFrame.setFocusableWindowState(true);
 				logFrame.setFocusableWindowState(true);
@@ -525,13 +527,13 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		});
 
 		loadingDialog = new JDialog(frame, "Please Wait...", true);
-		
+
 		JPanel loadingDialogPanel = new JPanel();
 		JLabel loadingDialogLabel = new JLabel("Loading...",
 				new ImageIcon(getClass().getClassLoader().getResource("res/launch.gif")), JLabel.CENTER);
-		
+
 		loadingDialogPanel.setBackground(Shared.UI_COLOR);
-		loadingDialogPanel.setBorder(new EmptyBorder(20, 20, 20, 20));
+		loadingDialogPanel.setBorder(new EmptyBorder(20, 5, 20, 20));
 		loadingDialogLabel.setFont(Shared.BUTTON_FONT);
 		loadingDialogLabel.setForeground(Color.WHITE);
 		loadingDialog.setBackground(Shared.UI_COLOR);
@@ -542,6 +544,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		loadingDialog.add(loadingDialogPanel);
 		loadingDialog.pack();
 		loadingDialog.setLocationRelativeTo(frame);
+		loadingDialog.setResizable(false);
 
 		informationDialog = new JDialog(frame, "Information", true);
 		informationDialog.setSize(600, 600);
@@ -625,6 +628,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		parseErrorDialog
 				.setIconImage(new ImageIcon(getClass().getClassLoader().getResource("res/error_dark.png")).getImage());
 		parseErrorDialog.setLocationRelativeTo(frame);
+		parseErrorDialog.setResizable(false);
 		parseErrorDialog.pack();
 
 		menuBar = new MenuBar();
@@ -1264,6 +1268,14 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		this.takeScreenshot = true;
 	}
 
+	public void reloadDebug() {
+		if (Shared.DEBUG_MODE) {
+			logTextArea.setText("");
+			Shared.SEGMENT_SCALE_MULTIPLIER = (int) (30 * (Math.random() + 0.4));
+			checkAndLoadFile(new File(currentFilePath));
+		}
+	}
+
 	@Override
 	public void mouseWheelMoved(MouseWheelEvent e) {
 
@@ -1380,6 +1392,8 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 			unlockScaleAndGenSliders();
 			Logger.info("Unlocked sliders");
 			Logger.info("Reload after changing values");
+		} else if (e.getKeyCode() == KeyEvent.VK_O) {
+			reloadDebug();
 		} else {
 			return;
 		}
