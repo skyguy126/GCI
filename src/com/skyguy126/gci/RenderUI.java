@@ -2,6 +2,7 @@ package com.skyguy126.gci;
 
 import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Cursor;
 import java.awt.Desktop;
 import java.awt.Dimension;
 import java.awt.Font;
@@ -13,6 +14,7 @@ import java.awt.Image;
 import java.awt.Menu;
 import java.awt.MenuBar;
 import java.awt.MenuItem;
+import java.awt.Point;
 import java.awt.Rectangle;
 import java.awt.Toolkit;
 import java.awt.datatransfer.Clipboard;
@@ -133,15 +135,18 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	private ReentrantLock glLock;
 	private ReentrantLock animateLock;
 
+	private Cursor panCursor;
+	private Cursor rotateCursor;
+
 	private volatile String axisLockText;
 	private volatile String decreaseSensitivityText;
 	private volatile String currentFilePath;
 
-	private volatile double zoomDistance;
-	private volatile double curX;
-	private volatile double curY;
-	private volatile double curAngleX;
-	private volatile double curAngleY;
+	private volatile float zoomDistance;
+	private volatile float curX;
+	private volatile float curY;
+	private volatile float curAngleX;
+	private volatile float curAngleY;
 	private volatile double currentTimePercent;
 
 	private volatile boolean lockHorizAxis;
@@ -311,7 +316,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 
 					animateLock.unlock();
 					glLock.unlock();
-					
+
 					Logger.info("Loaded file!");
 				}
 			}
@@ -526,8 +531,15 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 			}
 		});
 
-		loadingDialog = new JDialog(frame, "Please Wait...", true);
+		this.rotateCursor = Toolkit.getDefaultToolkit().createCustomCursor(
+				new ImageIcon(getClass().getClassLoader().getResource("res/rotate_pointer.png")).getImage(),
+				new Point(0, 0), "rotate");
 
+		this.panCursor = Toolkit.getDefaultToolkit().createCustomCursor(
+				new ImageIcon(getClass().getClassLoader().getResource("res/pan_pointer.png")).getImage(),
+				new Point(0, 0), "pan");
+
+		loadingDialog = new JDialog(frame, "Please Wait...", true);
 		JPanel loadingDialogPanel = new JPanel();
 		JLabel loadingDialogLabel = new JLabel("Loading...",
 				new ImageIcon(getClass().getClassLoader().getResource("res/launch.gif")), JLabel.CENTER);
@@ -1082,18 +1094,14 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		GL2 gl = glad.getGL().getGL2();
 		gl.glClear(GL2.GL_COLOR_BUFFER_BIT | GL2.GL_DEPTH_BUFFER_BIT);
 		setCamera(gl, glu);
-		gl.glTranslated(curX / 100.0, curY / -100.0, 0);
-		gl.glRotated(curAngleY, 1, 0, 0);
-		gl.glRotated(curAngleX, 0, 1, 0);
+		gl.glTranslatef(curX / 100.0f, curY / -100.0f, 0f);
+		gl.glRotatef(curAngleY, 1, 0, 0);
+		gl.glRotatef(curAngleX, 0, 1, 0);
 
 		// Draw coordinate axis
 		RenderHelpers.renderLine(gl, Color.RED, new float[] { 0f, 0f, 0f }, new float[] { 40f, 0f, 0f }, 5f);
 		RenderHelpers.renderLine(gl, Color.RED, new float[] { 0f, 0f, 0f }, new float[] { 0f, 40f, 0f }, 5f);
 		RenderHelpers.renderLine(gl, Color.RED, new float[] { 0f, 0f, 0f }, new float[] { 0f, 0f, -40f }, 5f);
-
-		RenderHelpers.render3DText(textRenderer3D, "X", 41, 0, 0, 0.05f);
-		RenderHelpers.render3DText(textRenderer3D, "Z", -1, 41, 0, 0.05f);
-		RenderHelpers.render3DText(textRenderer3D, "Y", -1, 0, -41, 0.05f);
 
 		// TODO change gl line method to connected line not individual segments
 
@@ -1105,6 +1113,10 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 
 			glLock.unlock();
 		}
+
+		RenderHelpers.render3DText(textRenderer3D, "X", 41, 0, 0, 0.05f);
+		RenderHelpers.render3DText(textRenderer3D, "Z", -1, 41, 0, 0.05f);
+		RenderHelpers.render3DText(textRenderer3D, "Y", -1, 0, -41, 0.05f);
 
 		if (this.displayFileDropMessage) {
 			RenderHelpers.renderText(textRenderer, "Drop file here.", 10, 10, this.glWidth, this.glHeight);
@@ -1222,19 +1234,19 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	}
 
 	public void resetCamera() {
-		this.zoomDistance = 80;
-		this.curAngleX = 0;
-		this.curAngleY = 90;
-		this.curX = -1360;
-		this.curY = 1240;
+		this.zoomDistance = 80f;
+		this.curAngleX = 0f;
+		this.curAngleY = 90f;
+		this.curX = -1360f;
+		this.curY = 1240f;
 	}
 
 	public void setCameraToIsometric() {
-		this.zoomDistance = 80;
+		this.zoomDistance = 80f;
 		this.curAngleX = -10f;
 		this.curAngleY = 40f;
-		this.curX = -1720;
-		this.curY = 1810;
+		this.curX = -1720f;
+		this.curY = 1810f;
 	}
 
 	public void resetWindowLayout() {
@@ -1280,15 +1292,15 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	public void mouseWheelMoved(MouseWheelEvent e) {
 
 		if (e.getWheelRotation() == -1) {
-			if (this.zoomDistance > 10)
-				this.zoomDistance -= (Shared.ZOOM_SENSITIVITY_MULTIPLIER / getDecreaseSensitivityMultiplier());
+			if (this.zoomDistance > 10f)
+				this.zoomDistance -= Shared.ZOOM_SENSITIVITY_MULTIPLIER / getDecreaseSensitivityMultiplier();
 			else
-				this.zoomDistance = 10;
+				this.zoomDistance = 10f;
 		} else {
-			if (this.zoomDistance < 300)
-				this.zoomDistance += (Shared.ZOOM_SENSITIVITY_MULTIPLIER / getDecreaseSensitivityMultiplier());
+			if (this.zoomDistance < 300f)
+				this.zoomDistance += Shared.ZOOM_SENSITIVITY_MULTIPLIER / getDecreaseSensitivityMultiplier();
 			else
-				this.zoomDistance = 300;
+				this.zoomDistance = 300f;
 		}
 
 		Logger.debug("Zoom - {}", this.zoomDistance);
@@ -1297,8 +1309,8 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	@Override
 	public void mouseDragged(MouseEvent e) {
 
-		double dx = (e.getX() - lastX) * Shared.PAN_SENSITIVITY_MULTIPLIER;
-		double dy = (e.getY() - lastY) * Shared.PAN_SENSITIVITY_MULTIPLIER;
+		float dx = (float) ((e.getX() - lastX) * Shared.PAN_SENSITIVITY_MULTIPLIER);
+		float dy = (float) ((e.getY() - lastY) * Shared.PAN_SENSITIVITY_MULTIPLIER);
 
 		if (SwingUtilities.isMiddleMouseButton(e)) {
 
@@ -1319,10 +1331,10 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 
 			// Rotate camera here
 
-			double thetadx = Math.atan((double) dx / 100.0)
-					* (Shared.ROTATE_SENSITIVITY_MULTIPLIER / getDecreaseSensitivityMultiplier());
-			double thetady = Math.atan((double) dy / 100.0)
-					* (Shared.ROTATE_SENSITIVITY_MULTIPLIER / getDecreaseSensitivityMultiplier());
+			float thetadx = (float) (Math.atan(dx / 100.0)
+					* (Shared.ROTATE_SENSITIVITY_MULTIPLIER / getDecreaseSensitivityMultiplier()));
+			float thetady = (float) (Math.atan(dy / 100.0)
+					* (Shared.ROTATE_SENSITIVITY_MULTIPLIER / getDecreaseSensitivityMultiplier()));
 
 			// TODO reset angle if over 2pi
 
@@ -1344,12 +1356,15 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 
 	@Override
 	public void mousePressed(MouseEvent e) {
-		if (SwingUtilities.isMiddleMouseButton(e))
+		if (SwingUtilities.isMiddleMouseButton(e)) {
 			Logger.debug("Drag started");
-		else if (SwingUtilities.isLeftMouseButton(e))
+			frame.setCursor(this.panCursor);
+		} else if (SwingUtilities.isLeftMouseButton(e)) {
 			Logger.debug("Rotate started");
-		else
+			frame.setCursor(this.rotateCursor);
+		} else {
 			return;
+		}
 
 		lastX = e.getX();
 		lastY = e.getY();
@@ -1357,19 +1372,20 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 
 	@Override
 	public void mouseReleased(MouseEvent e) {
-		if (SwingUtilities.isMiddleMouseButton(e))
+		if (SwingUtilities.isMiddleMouseButton(e)) {
 			Logger.debug("Drag ended");
-		else if (SwingUtilities.isLeftMouseButton(e))
+			frame.setCursor(Cursor.getDefaultCursor());
+		} else if (SwingUtilities.isLeftMouseButton(e)) {
 			Logger.debug("Rotate ended");
-		else
+			frame.setCursor(Cursor.getDefaultCursor());
+		} else {
 			return;
+		}
+
 	}
 
 	@Override
 	public void keyPressed(KeyEvent e) {
-
-		Logger.debug("Key pressed: {}", e.getKeyChar());
-
 		if (!lockHorizAxis && e.getKeyCode() == KeyEvent.VK_Z) {
 			lockHorizAxis = true;
 			this.axisLockText = "Axis Lock: X";
