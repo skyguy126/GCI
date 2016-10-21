@@ -301,6 +301,8 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 			stopPlayback();
 
 			Logger.info("Attempting to load: {}", filePath);
+			
+			long startTime = System.currentTimeMillis();
 
 			if (Shared.DEBUG_MODE) {
 				try {
@@ -382,7 +384,9 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 					animateLock.unlock();
 					glLock.unlock();
 
-					Logger.info("Loaded file!");
+					long elapsedTime = System.currentTimeMillis() - startTime;
+					
+					Logger.info("Loaded file in {}ms", elapsedTime);
 				}
 			}
 
