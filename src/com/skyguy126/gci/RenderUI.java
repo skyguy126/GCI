@@ -9,6 +9,8 @@ import java.awt.Font;
 import java.awt.Frame;
 import java.awt.Graphics;
 import java.awt.GraphicsEnvironment;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
 import java.awt.GridLayout;
 import java.awt.Image;
 import java.awt.Menu;
@@ -51,6 +53,7 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.locks.ReentrantLock;
@@ -75,12 +78,11 @@ import javax.swing.UIManager;
 import javax.swing.border.EmptyBorder;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
-import javax.swing.event.PopupMenuEvent;
-import javax.swing.event.PopupMenuListener;
 import javax.swing.text.BadLocationException;
 import javax.swing.text.DefaultEditorKit;
 import javax.swing.text.SimpleAttributeSet;
 import javax.swing.text.StyleConstants;
+import javax.swing.text.StyleContext;
 import javax.swing.text.StyledDocument;
 
 import org.pmw.tinylog.Configurator;
@@ -106,7 +108,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	private Frame frame;
 	private MenuBar menuBar;
 
-	private JFrame logFrame;
+	private JFrame detailsFrame;
 	private JFrame controlFrame;
 	private JSlider timeSlider;
 	private JSlider generationMultiplierSlider;
@@ -117,6 +119,12 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	private JDialog informationDialog;
 	private JTextPane logTextArea;
 
+	private CustomJTextField currentCmdText;
+	private CustomJTextField currentFeedRateText;
+	private CustomJTextField currentSpindleSpeedText;
+	private CustomJTextField measurementModeText;
+	private JTextPane boundsText;
+
 	private TextRenderer textRenderer;
 	private TextRenderer textRenderer3D;
 	private GLCapabilities glcaps;
@@ -125,6 +133,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	private GLU glu;
 
 	private SimpleAttributeSet logFormat;
+	private SimpleAttributeSet boundsFormat;
 
 	private double lastX;
 	private double lastY;
@@ -138,8 +147,6 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	private Cursor panCursor;
 	private Cursor rotateCursor;
 
-	private volatile String axisLockText;
-	private volatile String decreaseSensitivityText;
 	private volatile String currentFilePath;
 
 	private volatile float zoomDistance;
@@ -149,6 +156,13 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	private volatile float curAngleY;
 	private volatile double currentTimePercent;
 
+	private float minZ;
+	private float maxZ;
+	private float minY;
+	private float maxY;
+	private float minX;
+	private float maxX;
+
 	private volatile boolean lockHorizAxis;
 	private volatile boolean lockVertAxis;
 	private volatile boolean decreaseSensitivity;
@@ -156,6 +170,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	private volatile boolean screenshotToClipboard;
 	private volatile boolean isPlaying;
 	private volatile boolean displayFileDropMessage;
+	private volatile boolean displayBoundingBox;
 
 	private volatile ByteBuffer screenshotBuffer;
 	private volatile ArrayList<float[][]> vertexValuesGL;
@@ -213,6 +228,16 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 
 				for (int i = 0; i < loopNum; i++) {
 					temp.add(vertexValues.get(i));
+				}
+
+				if (loopNum > 0) {
+					currentCmdText.setText(currentCommandText.get(loopNum - 1));
+					currentSpindleSpeedText.setText(spindleSpeedText.get(loopNum - 1));
+					currentFeedRateText.setText(feedRateText.get(loopNum - 1));
+				} else {
+					currentCmdText.setText("");
+					currentSpindleSpeedText.setText("");
+					currentFeedRateText.setText("");
 				}
 
 				vertexValuesGL = temp;
@@ -313,6 +338,47 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 					currentCommandText = interpreter.getCurrentCommandText();
 					spindleSpeedText = interpreter.getSpindleSpeedText();
 					currentTimeScale = interpreter.getCurrentTimeScale();
+					
+					if (parser.getMeasurementMode() == MeasurementMode.INCH) {
+						measurementModeText.setText("INCH");
+					} else if (parser.getMeasurementMode() == MeasurementMode.MILLIMETER) {
+						measurementModeText.setText("MM");
+					}
+
+					minX = interpreter.getBounds()[0];
+					maxX = interpreter.getBounds()[1];
+					minY = interpreter.getBounds()[2];
+					maxY = interpreter.getBounds()[3];
+					minZ = interpreter.getBounds()[4];
+					maxZ = interpreter.getBounds()[5];
+
+					float minXT = interpreter.getBounds()[0] / Shared.SEGMENT_SCALE_MULTIPLIER;
+					float maxXT = interpreter.getBounds()[1] / Shared.SEGMENT_SCALE_MULTIPLIER;
+					float minYT = interpreter.getBounds()[2] / Shared.SEGMENT_SCALE_MULTIPLIER;
+					float maxYT = interpreter.getBounds()[3] / Shared.SEGMENT_SCALE_MULTIPLIER;
+					float minZT = interpreter.getBounds()[4] / Shared.SEGMENT_SCALE_MULTIPLIER;
+					float maxZT = interpreter.getBounds()[5] / Shared.SEGMENT_SCALE_MULTIPLIER;
+
+					StyleConstants.setForeground(boundsFormat, Color.WHITE);
+					StyleConstants.setBold(boundsFormat, true);
+					StyleConstants.setAlignment(boundsFormat, StyleConstants.ALIGN_CENTER);
+					boundsText.setText("");
+					StyledDocument doc = boundsText.getStyledDocument();
+
+					try {
+						doc.setParagraphAttributes(0, doc.getLength(), boundsFormat, false);
+						doc.insertString(doc.getLength(), "\n", boundsFormat);
+						doc.insertString(doc.getLength(), "X min: " + minXT + "    X max: " + maxXT + "\n",
+								boundsFormat);
+						doc.insertString(doc.getLength(), "Y min: " + minYT + "    Y max: " + maxYT + "\n",
+								boundsFormat);
+						doc.insertString(doc.getLength(), "Z min: " + minZT + "    Z max: " + maxZT + "\n",
+								boundsFormat);
+					} catch (BadLocationException e) {
+						Logger.error("Error setting bounds: {}", e);
+					}
+
+					Logger.debug("Bounding box: {}", Arrays.toString(interpreter.getBounds()));
 
 					animateLock.unlock();
 					glLock.unlock();
@@ -447,9 +513,8 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		this.screenshotToClipboard = false;
 		this.isPlaying = false;
 		this.displayFileDropMessage = false;
+		this.displayBoundingBox = false;
 
-		this.axisLockText = "Axis Lock: NA";
-		this.decreaseSensitivityText = "Dec Sensitivity: false";
 		this.currentFilePath = "";
 
 		this.vertexValues = new ArrayList<float[][]>();
@@ -460,8 +525,16 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		this.currentCommandText = new ArrayList<String>();
 		this.currentTimeScale = new ArrayList<Integer>();
 
+		this.minX = 0f;
+		this.maxX = 0f;
+		this.minY = 0f;
+		this.maxY = 0f;
+		this.minZ = 0f;
+		this.maxZ = 0f;
+
 		this.currentTimePercent = 1.0;
 		this.logFormat = new SimpleAttributeSet();
+		this.boundsFormat = new SimpleAttributeSet();
 		this.glLock = new ReentrantLock();
 		this.animateLock = new ReentrantLock();
 
@@ -508,24 +581,24 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 				Logger.debug("Main frame gained focus");
 
 				controlFrame.setFocusableWindowState(false);
-				logFrame.setFocusableWindowState(false);
+				detailsFrame.setFocusableWindowState(false);
 				controlFrame.toFront();
-				logFrame.toFront();
+				detailsFrame.toFront();
 				frame.toFront();
 				frame.requestFocus();
 				controlFrame.setFocusableWindowState(true);
-				logFrame.setFocusableWindowState(true);
+				detailsFrame.setFocusableWindowState(true);
 			}
 
 			@Override
 			public void windowIconified(WindowEvent e) {
-				logFrame.setState(JFrame.ICONIFIED);
+				detailsFrame.setState(JFrame.ICONIFIED);
 				controlFrame.setState(JFrame.ICONIFIED);
 			}
 
 			@Override
 			public void windowDeiconified(WindowEvent e) {
-				logFrame.setState(JFrame.NORMAL);
+				detailsFrame.setState(JFrame.NORMAL);
 				controlFrame.setState(JFrame.NORMAL);
 				frame.requestFocus();
 			}
@@ -546,7 +619,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 
 		loadingDialogPanel.setBackground(Shared.UI_COLOR);
 		loadingDialogPanel.setBorder(new EmptyBorder(20, 5, 20, 20));
-		loadingDialogLabel.setFont(Shared.BUTTON_FONT);
+		loadingDialogLabel.setFont(Shared.UI_FONT);
 		loadingDialogLabel.setForeground(Color.WHITE);
 		loadingDialog.setBackground(Shared.UI_COLOR);
 		loadingDialog.setDefaultCloseOperation(JDialog.DO_NOTHING_ON_CLOSE);
@@ -628,7 +701,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		});
 
 		parseErrorMessageLabel.setForeground(Color.WHITE);
-		parseErrorMessageLabel.setFont(Shared.BUTTON_FONT);
+		parseErrorMessageLabel.setFont(Shared.UI_FONT);
 		parseErrorDialogMessagePane.add(parseErrorMessageLabel);
 		parseErrorDialogMessagePane.setBackground(Shared.UI_COLOR);
 		parseErrorDialogButtonPane.add(parseErrorDialogButton);
@@ -682,6 +755,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		});
 
 		file.add(openMenuItem);
+		file.addSeparator();
 		file.add(exitMenuItem);
 
 		Menu window = new Menu("Window");
@@ -739,13 +813,14 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		menuBar.add(about);
 		frame.setMenuBar(menuBar);
 
-		logFrame = new JFrame("Log");
-		logFrame.setSize(400, 800);
-		logFrame.setLocation((int) frame.getLocation().getX() + 800, (int) frame.getLocation().getY());
-		logFrame.setResizable(true);
-		logFrame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
-		logFrame.setIconImage(new ImageIcon(getClass().getClassLoader().getResource("res/log_ico.png")).getImage());
-		logFrame.addWindowListener(new WindowAdapter() {
+		detailsFrame = new JFrame("Details");
+		detailsFrame.setLayout(new GridBagLayout());
+		detailsFrame.setSize(400, 800);
+		detailsFrame.setLocation((int) frame.getLocation().getX() + 800, (int) frame.getLocation().getY());
+		detailsFrame.setResizable(true);
+		detailsFrame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+		detailsFrame.setIconImage(new ImageIcon(getClass().getClassLoader().getResource("res/log_ico.png")).getImage());
+		detailsFrame.addWindowListener(new WindowAdapter() {
 			@Override
 			public void windowIconified(WindowEvent e) {
 				frame.setState(JFrame.ICONIFIED);
@@ -760,8 +835,6 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 			}
 		});
 
-		// TODO create a log buffer so memory doesn't run out
-
 		logTextArea = new JTextPane();
 		logTextArea.setEditable(false);
 		logTextArea.getStyledDocument().putProperty(DefaultEditorKit.EndOfLineStringProperty, "\n");
@@ -771,7 +844,15 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 				JScrollPane.HORIZONTAL_SCROLLBAR_ALWAYS);
 		logScroller.getVerticalScrollBar().setUnitIncrement(16);
 		new SmartScroller(logScroller);
-		logFrame.add(logScroller);
+
+		GridBagConstraints g = new GridBagConstraints();
+		g.gridx = g.gridy = 0;
+		g.gridwidth = g.gridheight = 1;
+		g.fill = GridBagConstraints.BOTH;
+		g.anchor = GridBagConstraints.NORTH;
+		g.weightx = 100;
+		g.weighty = 70;
+		detailsFrame.add(logScroller, g);
 
 		MenuBar logMenuBar = new MenuBar();
 		Menu taskMenu = new Menu("Task");
@@ -828,7 +909,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		taskMenu.add(clearMenuItem);
 		taskMenu.add(saveMenuItem);
 		logMenuBar.add(taskMenu);
-		logFrame.setMenuBar(logMenuBar);
+		detailsFrame.setMenuBar(logMenuBar);
 
 		JPopupMenu logPopupMenu = new JPopupMenu();
 		JMenuItem copyMenuItem = new JMenuItem("Copy");
@@ -858,6 +939,60 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		logPopupMenu.add(selectAllItem);
 		logTextArea.setComponentPopupMenu(logPopupMenu);
 
+		JPanel detailsPanel = new JPanel(new GridLayout(5, 2));
+		detailsPanel.setSize(500, 400);
+		detailsPanel.setMaximumSize(new Dimension(500, 400));
+		detailsPanel.setBackground(Shared.UI_COLOR);
+
+		CustomJTextField currentCmdTextTitle = new CustomJTextField();
+		CustomJTextField currentFeedRateTextTitle = new CustomJTextField();
+		CustomJTextField currentSpindleSpeedTextTitle = new CustomJTextField();
+		CustomJTextField boundsTextTitle = new CustomJTextField();
+		CustomJTextField measurementModeTextTitle = new CustomJTextField();
+
+		currentCmdText = new CustomJTextField();
+		currentFeedRateText = new CustomJTextField();
+		currentSpindleSpeedText = new CustomJTextField();
+		measurementModeText = new CustomJTextField();
+
+		boundsText = new JTextPane();
+		boundsText.setBackground(Shared.UI_COLOR);
+		boundsText.setEditable(false);
+		boundsText.setHighlighter(null);
+		boundsText.getStyledDocument().putProperty(DefaultEditorKit.EndOfLineStringProperty, "\n");
+
+		JPanel noWrapPanel2 = new JPanel(new BorderLayout());
+		noWrapPanel2.add(boundsText);
+		JScrollPane boundsTextScroller = new JScrollPane(noWrapPanel2, JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,
+				JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
+
+		currentCmdTextTitle.setText("Current Command");
+		currentCmdText.setText("");
+		currentFeedRateTextTitle.setText("Feed Rate");
+		currentFeedRateText.setText("");
+		currentSpindleSpeedTextTitle.setText("Spindle Speed");
+		currentSpindleSpeedText.setText("");
+		measurementModeTextTitle.setText("Measurement Mode");
+		measurementModeText.setText("");
+		boundsTextTitle.setText("Bounds");
+		boundsText.setText("");
+
+		detailsPanel.add(currentCmdTextTitle);
+		detailsPanel.add(currentCmdText);
+		detailsPanel.add(currentFeedRateTextTitle);
+		detailsPanel.add(currentFeedRateText);
+		detailsPanel.add(currentSpindleSpeedTextTitle);
+		detailsPanel.add(currentSpindleSpeedText);
+		detailsPanel.add(measurementModeTextTitle);
+		detailsPanel.add(measurementModeText);
+		detailsPanel.add(boundsTextTitle);
+		detailsPanel.add(boundsTextScroller);
+
+		g.gridy = 1;
+		g.weighty = 30;
+		g.anchor = GridBagConstraints.SOUTH;
+		detailsFrame.add(detailsPanel, g);
+
 		controlFrame = new JFrame("Controls");
 		controlFrame.setSize(400, 800);
 		controlFrame.setLocation((int) frame.getLocation().getX() - 400, (int) frame.getLocation().getY());
@@ -869,20 +1004,20 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 			@Override
 			public void windowIconified(WindowEvent e) {
 				frame.setState(JFrame.ICONIFIED);
-				logFrame.setState(JFrame.ICONIFIED);
+				detailsFrame.setState(JFrame.ICONIFIED);
 			}
 
 			@Override
 			public void windowDeiconified(WindowEvent e) {
 				frame.setState(JFrame.NORMAL);
-				logFrame.setState(JFrame.NORMAL);
+				detailsFrame.setState(JFrame.NORMAL);
 				frame.requestFocus();
 			}
 		});
 
 		JPanel controlPanel = new JPanel(new GridLayout(10, 0));
 		playButton = new CustomJButton("Play");
-		playButton.setFont(Shared.BUTTON_FONT);
+		playButton.setFont(Shared.UI_FONT);
 		playButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
@@ -971,7 +1106,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		genPanel.add(generationMultiplierSlider, BorderLayout.CENTER);
 
 		CustomJButton defButton = new CustomJButton("Default View");
-		defButton.setFont(Shared.BUTTON_FONT);
+		defButton.setFont(Shared.UI_FONT);
 		defButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent arg0) {
@@ -981,7 +1116,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		});
 
 		CustomJButton isoButton = new CustomJButton("Isometric View");
-		isoButton.setFont(Shared.BUTTON_FONT);
+		isoButton.setFont(Shared.UI_FONT);
 		isoButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent arg0) {
@@ -991,7 +1126,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		});
 
 		CustomJButton screenshotButton = new CustomJButton("Screenshot (File)");
-		screenshotButton.setFont(Shared.BUTTON_FONT);
+		screenshotButton.setFont(Shared.UI_FONT);
 		screenshotButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
@@ -1000,7 +1135,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		});
 
 		CustomJButton switchScreenshotModeButton = new CustomJButton("Switch Screenshot Mode");
-		switchScreenshotModeButton.setFont(Shared.BUTTON_FONT);
+		switchScreenshotModeButton.setFont(Shared.UI_FONT);
 		switchScreenshotModeButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
@@ -1015,7 +1150,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		});
 
 		CustomJButton reloadFileButton = new CustomJButton("Reload");
-		reloadFileButton.setFont(Shared.BUTTON_FONT);
+		reloadFileButton.setFont(Shared.UI_FONT);
 		reloadFileButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
@@ -1025,7 +1160,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		});
 
 		CustomJButton clearButton = new CustomJButton("Clear");
-		clearButton.setFont(Shared.BUTTON_FONT);
+		clearButton.setFont(Shared.UI_FONT);
 		clearButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
@@ -1040,6 +1175,8 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 				spindleSpeedText = new ArrayList<String>();
 				feedRateText = new ArrayList<String>();
 				currentCommandText = new ArrayList<String>();
+				boundsText.setText("");
+				measurementModeText.setText("");
 
 				glLock.unlock();
 				animateLock.unlock();
@@ -1066,7 +1203,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		resetCamera();
 		status.countDown();
 
-		logFrame.setVisible(true);
+		detailsFrame.setVisible(true);
 		controlFrame.setVisible(true);
 		frame.setVisible(true);
 		frame.requestFocus();
@@ -1099,9 +1236,13 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		gl.glRotatef(curAngleX, 0, 1, 0);
 
 		// Draw coordinate axis
-		RenderHelpers.renderLine(gl, Color.RED, new float[] { 0f, 0f, 0f }, new float[] { 40f, 0f, 0f }, 5f);
-		RenderHelpers.renderLine(gl, Color.RED, new float[] { 0f, 0f, 0f }, new float[] { 0f, 40f, 0f }, 5f);
-		RenderHelpers.renderLine(gl, Color.RED, new float[] { 0f, 0f, 0f }, new float[] { 0f, 0f, -40f }, 5f);
+		RenderHelpers.renderLine(gl, Color.RED, new float[] { 0f, 0f, 0f }, new float[] { 40f, 0f, 0f }, 6f);
+		RenderHelpers.renderLine(gl, Color.RED, new float[] { 0f, 0f, 0f }, new float[] { 0f, 40f, 0f }, 6f);
+		RenderHelpers.renderLine(gl, Color.RED, new float[] { 0f, 0f, 0f }, new float[] { 0f, 0f, -40f }, 6f);
+
+		RenderHelpers.render3DText(textRenderer3D, "X", 41, 0, 0, 0.05f);
+		RenderHelpers.render3DText(textRenderer3D, "Z", -1, 41, 0, 0.05f);
+		RenderHelpers.render3DText(textRenderer3D, "Y", -1, 0, -41, 0.05f);
 
 		// TODO change gl line method to connected line not individual segments
 
@@ -1114,9 +1255,32 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 			glLock.unlock();
 		}
 
-		RenderHelpers.render3DText(textRenderer3D, "X", 41, 0, 0, 0.05f);
-		RenderHelpers.render3DText(textRenderer3D, "Z", -1, 41, 0, 0.05f);
-		RenderHelpers.render3DText(textRenderer3D, "Y", -1, 0, -41, 0.05f);
+		if (this.displayBoundingBox) {
+			RenderHelpers.renderLine(gl, Color.YELLOW, new float[] { minX, minZ, -minY },
+					new float[] { maxX, minZ, -minY }, 4.5f);
+			RenderHelpers.renderLine(gl, Color.YELLOW, new float[] { maxX, minZ, -minY },
+					new float[] { maxX, maxZ, -minY }, 4.5f);
+			RenderHelpers.renderLine(gl, Color.YELLOW, new float[] { maxX, maxZ, -minY },
+					new float[] { minX, maxZ, -minY }, 4.5f);
+			RenderHelpers.renderLine(gl, Color.YELLOW, new float[] { minX, maxZ, -minY },
+					new float[] { minX, minZ, -minY }, 4.5f);
+			RenderHelpers.renderLine(gl, Color.YELLOW, new float[] { minX, minZ, -maxY },
+					new float[] { maxX, minZ, -maxY }, 4.5f);
+			RenderHelpers.renderLine(gl, Color.YELLOW, new float[] { maxX, minZ, -maxY },
+					new float[] { maxX, maxZ, -maxY }, 4.5f);
+			RenderHelpers.renderLine(gl, Color.YELLOW, new float[] { maxX, maxZ, -maxY },
+					new float[] { minX, maxZ, -maxY }, 4.5f);
+			RenderHelpers.renderLine(gl, Color.YELLOW, new float[] { minX, maxZ, -maxY },
+					new float[] { minX, minZ, -maxY }, 4.5f);
+			RenderHelpers.renderLine(gl, Color.YELLOW, new float[] { minX, minZ, -minY },
+					new float[] { minX, minZ, -maxY }, 4.5f);
+			RenderHelpers.renderLine(gl, Color.YELLOW, new float[] { maxX, minZ, -minY },
+					new float[] { maxX, minZ, -maxY }, 4.5f);
+			RenderHelpers.renderLine(gl, Color.YELLOW, new float[] { minX, maxZ, -minY },
+					new float[] { minX, maxZ, -maxY }, 4.5f);
+			RenderHelpers.renderLine(gl, Color.YELLOW, new float[] { maxX, maxZ, -minY },
+					new float[] { maxX, maxZ, -maxY }, 4.5f);
+		}
 
 		if (this.displayFileDropMessage) {
 			RenderHelpers.renderText(textRenderer, "Drop file here.", 10, 10, this.glWidth, this.glHeight);
@@ -1228,7 +1392,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 
 		frame.remove(glcanvas);
 		frame.dispose();
-		logFrame.dispose();
+		detailsFrame.dispose();
 		controlFrame.dispose();
 		System.exit(0);
 	}
@@ -1252,8 +1416,8 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	public void resetWindowLayout() {
 		frame.setSize(800, 800);
 		frame.setLocationRelativeTo(null);
-		logFrame.setSize(400, 800);
-		logFrame.setLocation((int) frame.getLocation().getX() + 800, (int) frame.getLocation().getY());
+		detailsFrame.setSize(400, 800);
+		detailsFrame.setLocation((int) frame.getLocation().getX() + 800, (int) frame.getLocation().getY());
 		controlFrame.setSize(400, 800);
 		controlFrame.setLocation((int) frame.getLocation().getX() - 400, (int) frame.getLocation().getY());
 	}
@@ -1268,8 +1432,8 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		controlFrame.setLocation(0, 0);
 		frame.setSize(qWidth * 2, height);
 		frame.setLocation(qWidth, 0);
-		logFrame.setSize(qWidth, height);
-		logFrame.setLocation(qWidth * 3, 0);
+		detailsFrame.setSize(qWidth, height);
+		detailsFrame.setLocation(qWidth * 3, 0);
 	}
 
 	public double getDecreaseSensitivityMultiplier() {
@@ -1388,13 +1552,10 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	public void keyPressed(KeyEvent e) {
 		if (!lockHorizAxis && e.getKeyCode() == KeyEvent.VK_Z) {
 			lockHorizAxis = true;
-			this.axisLockText = "Axis Lock: X";
 		} else if (!lockVertAxis && e.getKeyCode() == KeyEvent.VK_X && !lockHorizAxis) {
 			lockVertAxis = true;
-			this.axisLockText = "Axis Lock: Y";
 		} else if (!decreaseSensitivity && e.getKeyCode() == KeyEvent.VK_C) {
 			decreaseSensitivity = true;
-			this.decreaseSensitivityText = "Dec Sensitivity: true";
 		} else if (e.getKeyCode() == KeyEvent.VK_V) {
 			resetCamera();
 		} else if (e.getKeyCode() == KeyEvent.VK_B) {
@@ -1406,10 +1567,12 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 			takeScreenshot();
 		} else if (e.getKeyCode() == KeyEvent.VK_L) {
 			unlockScaleAndGenSliders();
-			Logger.info("Unlocked sliders");
-			Logger.info("Reload after changing values");
+			Logger.info("Unlocked sliders, reload after changing values");
 		} else if (e.getKeyCode() == KeyEvent.VK_O) {
 			reloadDebug();
+		} else if (e.getKeyCode() == KeyEvent.VK_Q) {
+			this.displayBoundingBox = !this.displayBoundingBox;
+			Logger.debug("bounding box state: {}", this.displayBoundingBox);
 		} else {
 			return;
 		}
@@ -1422,13 +1585,10 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 
 		if (lockHorizAxis && e.getKeyCode() == KeyEvent.VK_Z) {
 			lockHorizAxis = false;
-			this.axisLockText = "Axis Lock: N/A";
 		} else if (lockVertAxis && e.getKeyCode() == KeyEvent.VK_X) {
 			lockVertAxis = false;
-			this.axisLockText = "Axis Lock: N/A";
 		} else if (decreaseSensitivity && e.getKeyCode() == KeyEvent.VK_C) {
 			decreaseSensitivity = false;
-			this.decreaseSensitivityText = "Dec Sensitivity: false";
 		} else {
 			return;
 		}

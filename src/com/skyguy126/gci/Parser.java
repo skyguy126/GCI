@@ -103,10 +103,16 @@ public class Parser {
 				// Keep track of the command block number
 				int cmdNum = -1;
 
-				Logger.debug("Entering loop for line {}", lineNum);
+				
+				
+				String[] currentLineArray = currentLine.replaceAll("\n", "").replaceAll("\\s+", " ").split(" ");
+				int currentLineSize = currentLineArray.length;
+				int remainingArgs = currentLineSize - 1;
 
+				Logger.debug("Entering loop for line {}, arg size: {}", lineNum, currentLineSize);
+				
 				// Remove \n and double spaces before processing
-				for (String x : currentLine.replaceAll("\n", "").replaceAll("\\s+", " ").split(" ")) {
+				for (String x : currentLineArray) {
 					// Trim trailing whitespace and increment command number
 					x = x.trim();
 					cmdNum++;
@@ -134,11 +140,13 @@ public class Parser {
 					if (cmdNum == 0) {
 						lastNTag = x;
 						continue;
+					} else {
+						remainingArgs--;
 					}
 
 					// Last command was M03 to start spindle and we need to get
 					// spindle speed
-					if (lastCmdExists && lastCmd.equals("M03")) {
+					if (lastCmdExists && lastCmd.equals("M3")) {
 						if (Pattern.compile("[S]\\d+").matcher(x).matches()) {
 							Logger.debug("Found S value: {}", x);
 							cmdList.add(x);
@@ -153,8 +161,8 @@ public class Parser {
 						}
 					}
 
-					if (lastCmdExists && (lastCmd.equals("G00") || lastCmd.equals("G01") || lastCmd.equals("G02")
-							|| lastCmd.equals("G03"))) {
+					if (lastCmdExists && (lastCmd.equals("G0") || lastCmd.equals("G1") || lastCmd.equals("G2")
+							|| lastCmd.equals("G3"))) {
 
 						// Search for X Y Z and F tags following G00 and G01
 
@@ -210,99 +218,97 @@ public class Parser {
 
 						}
 					}
-
-					switch (x) {
-					case "G04":
-					case "G4":
-					case "G05":
-					case "G5":
-					case "G80":
-					case "G81":
-					case "G82":
-					case "M00":
-					case "M0":
-					case "M01":
-					case "M1":
-					case "M06":
-					case "M6":
-					case "M08":
-					case "M8":
-					case "M09":
-					case "M9":
-					case "M10":
-					case "M11":
-					case "M30":
-					case "M47":
-					case "M02":
-					case "M2":
-						break;
-					case "G20":
-						if (measurementMode == null) {
-							measurementMode = MeasurementMode.INCH;
-							Logger.debug("Measurement mode: inch");
-						} else {
-							Logger.error("Measurement mode can only be defined once");
-							valid = false;
-							loopExit = true;
-						}
-						break;
-					case "G21":
-						if (measurementMode == null) {
-							measurementMode = MeasurementMode.MILLIMETER;
-							Logger.debug("Measurement mode: millimeter");
-						} else {
-							Logger.error("Measurement mode can only be defined once");
-							valid = false;
-							loopExit = true;
-						}
-						break;
-					case "G90":
-						if (coordinateMode == null) {
-							coordinateMode = CoordinateMode.ABSOLUTE;
-							Logger.debug("Coordinate mode: absolute");
-						} else {
-							Logger.error("Coordinate mode can only be defined once");
-							valid = false;
-							loopExit = true;
-						}
-						break;
-					case "G91":
-						if (coordinateMode == null) {
-							coordinateMode = CoordinateMode.RELATIVE;
-							Logger.debug("Coordinate mode: relative");
-						} else {
-							Logger.error("Coordinate mode can only be defined once");
-							valid = false;
-							loopExit = true;
-						}
-						break;
-					case "M05":
-					case "M5":
-						cmdList.add(x);
-						break;
-					case "M03":
-					case "M3":
-					case "G00":
-					case "G0":
-					case "G01":
-					case "G1":
-					case "G02":
-					case "G2":
-					case "G03":
-					case "G3":
-						cmdList.add(x);
-						lastCmdExists = true;
-						lastCmd = x;
-						break;
-					default:
-						if (x.startsWith("T")) {
-							Logger.debug("Ignoring T tag on line {}, block {}", lineNum, cmdNum);
-						} else {
-							Logger.error("Invalid code on line {} block {} ({})", lineNum, cmdNum, lastNTag);
-							valid = false;
-							loopExit = true;
+					
+					if (Pattern.compile("[GMT]\\d+").matcher(x).matches()) {
+						char gCodeCmd = x.charAt(0);
+						int gCodeValue = Integer.parseInt(x.substring(1));
+						String gCode = gCodeCmd + String.valueOf(gCodeValue);
+						
+						switch (gCode) {
+						case "G4":
+						case "G5":
+						case "G80":
+						case "G81":
+						case "G82":
+						case "M0":
+						case "M1":
+						case "M6":
+						case "M8":
+						case "M9":
+						case "M10":
+						case "M11":
+						case "M30":
+						case "M47":
+						case "M2":
 							break;
+						case "G20":
+							if (measurementMode == null) {
+								measurementMode = MeasurementMode.INCH;
+								Logger.debug("Measurement mode: inch");
+							} else {
+								Logger.error("Measurement mode can only be defined once");
+								valid = false;
+								loopExit = true;
+							}
+							break;
+						case "G21":
+							if (measurementMode == null) {
+								measurementMode = MeasurementMode.MILLIMETER;
+								Logger.debug("Measurement mode: millimeter");
+							} else {
+								Logger.error("Measurement mode can only be defined once");
+								valid = false;
+								loopExit = true;
+							}
+							break;
+						case "G90":
+							if (coordinateMode == null) {
+								coordinateMode = CoordinateMode.ABSOLUTE;
+								Logger.debug("Coordinate mode: absolute");
+							} else {
+								Logger.error("Coordinate mode can only be defined once");
+								valid = false;
+								loopExit = true;
+							}
+							break;
+						case "G91":
+							if (coordinateMode == null) {
+								coordinateMode = CoordinateMode.RELATIVE;
+								Logger.debug("Coordinate mode: relative");
+							} else {
+								Logger.error("Coordinate mode can only be defined once");
+								valid = false;
+								loopExit = true;
+							}
+							break;
+						case "M5":
+							cmdList.add(gCode);
+							break;
+						case "M3":
+						case "G0":
+						case "G1":
+						case "G2":
+						case "G3":
+							cmdList.add(gCode);
+							lastCmdExists = true;
+							lastCmd = gCode;
+							break;
+						default:
+							if (gCode.startsWith("T")) {
+								Logger.debug("Ignoring T tag on line {}, block {}", lineNum, cmdNum);
+							} else {
+								Logger.error("Invalid code on line {} block {} ({})", lineNum, cmdNum, lastNTag);
+								valid = false;
+								loopExit = true;
+								break;
+							}
 						}
+						
+					} else {
+						Logger.error("Invalid code on line {} block {} ({})", lineNum, cmdNum, lastNTag);
+						valid = false;
+						loopExit = true;
+						break;
 					}
 
 					// Exit loop if 1 command block on a line is invalid
@@ -313,7 +319,7 @@ public class Parser {
 				}
 
 				// Make sure X Y or Z tag was given for G00 and G01
-				if (lastCmdExists && (lastCmd.equals("G00") || lastCmd.equals("G01"))) {
+				if (lastCmdExists && (lastCmd.equals("G0") || lastCmd.equals("G1"))) {
 					if (!(xExists || yExists || zExists) || (iExists || jExists)) {
 						Logger.error("{} must be supplied with X Y or Z tag on line {} ({})", lastCmd, lineNum,
 								lastNTag);
@@ -322,11 +328,18 @@ public class Parser {
 				}
 
 				// Make sure I and J tag was given for G02 and G03
-				if (lastCmdExists && (lastCmd.equals("G02") || lastCmd.equals("G03"))) {
+				if (lastCmdExists && (lastCmd.equals("G2") || lastCmd.equals("G3"))) {
 					if (zExists || !(iExists && jExists)) {
 						Logger.error("{} must be supplied with I and J tag on line {} ({})", lastCmd, lineNum, lastNTag);
 						valid = false;
 					}
+				}
+				
+				// Check if M03 has spindle speed following it
+				if (lastCmdExists && lastCmd.equals("M3") && remainingArgs == 0) {
+					Logger.error("M03 must be followed by S tag indicating spindle speed on line {} ({})",
+							lineNum, lastNTag);
+					valid = false;
 				}
 
 				// Add current line to main gcode array if command is valid

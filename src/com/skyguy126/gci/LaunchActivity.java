@@ -17,7 +17,7 @@ public class LaunchActivity {
 		JLabel splashContent = new JLabel("Launching GCI...", new ImageIcon(getClass().getClassLoader().getResource("res/launch.gif")), JLabel.CENTER);
 
 		splashContent.setForeground(Color.WHITE);
-		splashContent.setFont(Shared.BUTTON_FONT);
+		splashContent.setFont(Shared.UI_FONT);
 		splashContent.setBorder(new EmptyBorder(20, 5, 20, 20));
 
 		splash.setAlwaysOnTop(true);

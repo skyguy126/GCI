@@ -20,6 +20,13 @@ public class Interpreter {
 	private float startY;
 	private float startZ;
 
+	private float minZ;
+	private float maxZ;
+	private float minY;
+	private float maxY;
+	private float minX;
+	private float maxX;
+
 	private int totalTicks;
 
 	public Interpreter(ArrayList<ArrayList<String>> g) {
@@ -38,6 +45,13 @@ public class Interpreter {
 		this.startX = 0;
 		this.startY = 0;
 		this.startZ = 0;
+
+		this.minX = 0f;
+		this.maxX = 0f;
+		this.minY = 0f;
+		this.maxY = 0f;
+		this.minZ = 0f;
+		this.maxZ = 0f;
 	}
 
 	public boolean generateAbsolute() {
@@ -49,6 +63,7 @@ public class Interpreter {
 		// and current feed rate text to their respective arrays so we can loop
 		// through them in
 		// opengl
+
 		String curCmd = "";
 		String curSpindleSpeedText = "";
 		String curFeedRateText = "";
@@ -76,15 +91,15 @@ public class Interpreter {
 
 			// Check for the command and perform specific actions
 			switch (curCmd) {
-			case "M05":
+			case "M5":
 				Logger.debug("Found M05");
 				break;
-			case "M03":
+			case "M3":
 				curSpindleSpeedText = gCodeArray.get(i).get(1).substring(1);
 				Logger.debug("Set spindle speed to {}", curSpindleSpeedText);
 				break;
-			case "G00":
-			case "G01":
+			case "G0":
+			case "G1":
 
 				// Extract the X Y and Z float values from line
 				// Gather F value also
@@ -105,6 +120,9 @@ public class Interpreter {
 					}
 
 				}
+
+				processBounds(curX, curY, curZ);
+
 				Logger.debug("X{} Y{} Z{} FeedRate {}", curX, curY, curZ, curFeedRateText);
 
 				// Find distance between coordinates and calculate number of
@@ -150,9 +168,9 @@ public class Interpreter {
 					vertexArray[1][2] = lastY * -1;
 					vertexArray[1][1] = lastZ;
 
-					if (curCmd.equals("G00")) {
+					if (curCmd.equals("G0")) {
 						this.currentLineColor.add(Color.GREEN);
-					} else if (curCmd.equals("G01")) {
+					} else if (curCmd.equals("G1")) {
 						this.currentLineColor.add(Color.BLUE);
 					}
 
@@ -160,9 +178,9 @@ public class Interpreter {
 
 					// Add values to main vertex array
 					this.vertexValues.add(vertexArray);
-					this.feedRateText.add("Feed Rate: " + curFeedRateText);
-					this.spindleSpeedText.add("Spindle Speed: " + curSpindleSpeedText);
-					this.currentCommandText.add("Current Command: " + curCmd);
+					this.feedRateText.add(curFeedRateText);
+					this.spindleSpeedText.add(curSpindleSpeedText);
+					this.currentCommandText.add(curCmd);
 					this.currentTimeScale.add(1);
 
 					this.totalTicks++;
@@ -175,8 +193,8 @@ public class Interpreter {
 				lastY = curY;
 				lastZ = curZ;
 				break;
-			case "G02":
-			case "G03":
+			case "G2":
+			case "G3":
 				Logger.debug("Arc interpolation");
 
 				for (int x = 1; x < gCodeArray.get(i).size(); x++) {
@@ -199,6 +217,7 @@ public class Interpreter {
 					}
 
 				}
+
 				Logger.debug("X{} Y{} Z{} I{} J{} FeedRate {}", curX, curY, curZ, lastI, lastJ, curFeedRateText);
 
 				// Find radius with distance formula
@@ -213,7 +232,7 @@ public class Interpreter {
 					totalTheta += 2 * Math.PI;
 				}
 
-				if (curCmd.equals("G03")) {
+				if (curCmd.equals("G3")) {
 					totalTheta = 2 * Math.PI - totalTheta;
 				}
 				double totalArcSegments = (int) (totalTheta * Shared.SEGMENT_GENERATION_MULTIPLIER
@@ -238,12 +257,12 @@ public class Interpreter {
 					vertexArray[0][2] = lastY * -1;
 					vertexArray[0][1] = lastZ;
 
-					if (curCmd.equals("G03")) {
+					if (curCmd.equals("G3")) {
 						lastX = (float) (lastI + radius * Math.cos(angleS + x * dTheta));
 						lastY = (float) (lastJ + radius * Math.sin(angleS + x * dTheta));
 					}
 
-					if (curCmd.equals("G02")) {
+					if (curCmd.equals("G2")) {
 						lastX = (float) (lastI + radius * Math.cos(angleS - x * dTheta));
 						lastY = (float) (lastJ + radius * Math.sin(angleS - x * dTheta));
 					}
@@ -251,17 +270,17 @@ public class Interpreter {
 					vertexArray[1][0] = lastX;
 					vertexArray[1][2] = lastY * -1;
 					vertexArray[1][1] = lastZ;
+
 					Logger.debug("{}", Arrays.deepToString(vertexArray));
-					// Add values to main vertex array
+					processBounds(lastX, lastY, lastZ);
+
 					this.vertexValues.add(vertexArray);
-					this.feedRateText.add("Feed Rate: " + curFeedRateText);
+					this.feedRateText.add(curFeedRateText);
 					this.currentLineColor.add(Color.BLUE);
-					this.spindleSpeedText.add("Spindle Speed: " + curSpindleSpeedText);
-					this.currentCommandText.add("Current Command: " + curCmd);
+					this.spindleSpeedText.add(curSpindleSpeedText);
+					this.currentCommandText.add(curCmd);
 					this.currentTimeScale.add(Shared.ARC_GENERATION_MULTIPLIER);
-
 					this.totalTicks++;
-
 				}
 
 				Logger.debug("---------- END VERTEX ARRAY ----------");
@@ -281,7 +300,27 @@ public class Interpreter {
 		return true;
 	}
 
-	// Set start position or use default value of 0
+	private void processBounds(float x, float y, float z) {
+		if (x < this.minX)
+			this.minX = x;
+		else if (x > this.maxX)
+			this.maxX = x;
+
+		if (y < this.minY)
+			this.minY = y;
+		else if (y > this.maxY)
+			this.maxY = y;
+
+		if (z < this.minZ)
+			this.minZ = z;
+		else if (z > this.maxZ)
+			this.maxZ = z;
+	}
+
+	public float[] getBounds() {
+		return new float[] { this.minX, this.maxX, this.minY, this.maxY, this.minZ, this.maxZ };
+	}
+
 	public void setStartPosition(float x, float y, float z) {
 		this.startX = x;
 		this.startY = y;
@@ -308,11 +347,11 @@ public class Interpreter {
 		return currentCommandText;
 	}
 
-	public int getTotalTicks() {
-		return totalTicks;
-	}
-
 	public ArrayList<Color> getCurrentLineColor() {
 		return currentLineColor;
+	}
+
+	public int getTotalTicks() {
+		return totalTicks;
 	}
 }

@@ -7,10 +7,10 @@ import org.pmw.tinylog.Level;
 
 public class Shared {
 	public static final String LOG_FORMAT = "{date} - {level}: {message}";
-	public static final String VERSION = "v0.3a";
+	public static final String VERSION = "v0.4a";
 	public static final String SOURCE_CODE_URL = "https://github.com/skyguy126/GCI";
 
-	public static final boolean DEBUG_MODE = true;
+	public static final boolean DEBUG_MODE = false;
 	public static final boolean VSYNC = true;
 	public static final boolean USE_SYSTEM_LOOK_AND_FEEL = false;
 	public static final boolean ENABLE_ANTIALIAS = true;
@@ -27,6 +27,6 @@ public class Shared {
 	public static final long TIME_SCALE = 17;
 
 	public static final Level LOG_LEVEL = (DEBUG_MODE) ? Level.DEBUG : Level.INFO;
-	public static final Font BUTTON_FONT = new Font("Arial", Font.PLAIN, 20);
+	public static final Font UI_FONT = new Font("Arial", Font.PLAIN, 20);
 	public static final Color UI_COLOR = new Color(69, 90, 100);
 }
