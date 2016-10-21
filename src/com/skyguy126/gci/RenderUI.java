@@ -82,7 +82,6 @@ import javax.swing.text.BadLocationException;
 import javax.swing.text.DefaultEditorKit;
 import javax.swing.text.SimpleAttributeSet;
 import javax.swing.text.StyleConstants;
-import javax.swing.text.StyleContext;
 import javax.swing.text.StyledDocument;
 
 import org.pmw.tinylog.Configurator;
@@ -911,11 +910,14 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		logMenuBar.add(taskMenu);
 		detailsFrame.setMenuBar(logMenuBar);
 
-		JPopupMenu logPopupMenu = new JPopupMenu();
+		JPopupMenu toolsPopupMenu = new JPopupMenu();
 		JMenuItem copyMenuItem = new JMenuItem("Copy");
 		copyMenuItem.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
+				if (e.getSource() instanceof JTextPane)
+					Logger.debug("found");
+				
 				String selectedText = logTextArea.getSelectedText();
 				if (selectedText != null) {
 					StringSelection text = new StringSelection(selectedText);
@@ -935,9 +937,9 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 			}
 		});
 
-		logPopupMenu.add(copyMenuItem);
-		logPopupMenu.add(selectAllItem);
-		logTextArea.setComponentPopupMenu(logPopupMenu);
+		toolsPopupMenu.add(copyMenuItem);
+		toolsPopupMenu.add(selectAllItem);
+		logTextArea.setComponentPopupMenu(toolsPopupMenu);
 
 		JPanel detailsPanel = new JPanel(new GridLayout(5, 2));
 		detailsPanel.setSize(500, 400);
@@ -958,15 +960,15 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		boundsText = new JTextPane();
 		boundsText.setBackground(Shared.UI_COLOR);
 		boundsText.setEditable(false);
-		boundsText.setHighlighter(null);
 		boundsText.getStyledDocument().putProperty(DefaultEditorKit.EndOfLineStringProperty, "\n");
+		boundsText.setHighlighter(null);
 
 		JPanel noWrapPanel2 = new JPanel(new BorderLayout());
 		noWrapPanel2.add(boundsText);
 		JScrollPane boundsTextScroller = new JScrollPane(noWrapPanel2, JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,
 				JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
 
-		currentCmdTextTitle.setText("Current Command");
+		currentCmdTextTitle.setText("Command");
 		currentCmdText.setText("");
 		currentFeedRateTextTitle.setText("Feed Rate");
 		currentFeedRateText.setText("");
@@ -1240,10 +1242,6 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		RenderHelpers.renderLine(gl, Color.RED, new float[] { 0f, 0f, 0f }, new float[] { 0f, 40f, 0f }, 6f);
 		RenderHelpers.renderLine(gl, Color.RED, new float[] { 0f, 0f, 0f }, new float[] { 0f, 0f, -40f }, 6f);
 
-		RenderHelpers.render3DText(textRenderer3D, "X", 41, 0, 0, 0.05f);
-		RenderHelpers.render3DText(textRenderer3D, "Z", -1, 41, 0, 0.05f);
-		RenderHelpers.render3DText(textRenderer3D, "Y", -1, 0, -41, 0.05f);
-
 		// TODO change gl line method to connected line not individual segments
 
 		if (glLock.tryLock()) {
@@ -1281,6 +1279,10 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 			RenderHelpers.renderLine(gl, Color.YELLOW, new float[] { maxX, maxZ, -minY },
 					new float[] { maxX, maxZ, -maxY }, 4.5f);
 		}
+		
+		RenderHelpers.render3DText(textRenderer3D, "X", 41, 0, 0, 0.05f);
+		RenderHelpers.render3DText(textRenderer3D, "Z", -1, 41, 0, 0.05f);
+		RenderHelpers.render3DText(textRenderer3D, "Y", -1, 0, -41, 0.05f);
 
 		if (this.displayFileDropMessage) {
 			RenderHelpers.renderText(textRenderer, "Drop file here.", 10, 10, this.glWidth, this.glHeight);

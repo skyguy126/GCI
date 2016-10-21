@@ -1,7 +1,6 @@
 package com.skyguy126.gci;
 
 import java.awt.Color;
-import java.awt.Insets;
 
 import javax.swing.JTextField;
 
@@ -14,5 +13,6 @@ public class CustomJTextField extends JTextField {
 		setBackground(Shared.UI_COLOR);
 		setForeground(Color.WHITE);
 		setHorizontalAlignment(JTextField.CENTER);
+		setHighlighter(null);
 	}
 }
