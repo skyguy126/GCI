@@ -205,6 +205,10 @@ public class Interpreter {
 			case "G2":
 			case "G3":
 				Logger.debug("Arc interpolation");
+				
+				lastI += lastX;
+				lastJ += lastY;
+				
 				Logger.debug("X{} Y{} Z{} I{} J{} FeedRate {}", curX, curY, curZ, lastI, lastJ, curFeedRateText);
 
 				// Find radius with distance formula
