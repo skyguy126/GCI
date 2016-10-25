@@ -1,15 +1,13 @@
 package com.skyguy126.gci;
 
-import org.pmw.tinylog.Logger;
-
 import java.io.BufferedReader;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
-
 import java.util.ArrayList;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import org.pmw.tinylog.Logger;
 
 public class Parser {
 
@@ -103,14 +101,12 @@ public class Parser {
 				// Keep track of the command block number
 				int cmdNum = -1;
 
-				
-				
 				String[] currentLineArray = currentLine.replaceAll("\n", "").replaceAll("\\s+", " ").split(" ");
 				int currentLineSize = currentLineArray.length;
 				int remainingArgs = currentLineSize - 1;
 
 				Logger.debug("Entering loop for line {}, arg size: {}", lineNum, currentLineSize);
-				
+
 				// Remove \n and double spaces before processing
 				for (String x : currentLineArray) {
 					// Trim trailing whitespace and increment command number
@@ -122,23 +118,17 @@ public class Parser {
 						Logger.error("Invalid N tag at line {}", lineNum);
 						valid = false;
 						break;
-					} else if (cmdNum == 1) {
-						// Command following N tag MUST be G or M
-
-						Matcher mg = Pattern.compile("[G]\\d+").matcher(x);
-						Matcher mm = Pattern.compile("[M]\\d+").matcher(x);
-
-						if (!mg.matches() && !mm.matches()) {
-							Logger.error("Syntax error on line {} ({}). N tag must be followed by a proper G or M tag",
-									lineNum, lastNTag);
-							valid = false;
-							break;
-						}
 					}
 
 					// No need to process the N tag, ignoring that anyways
 					if (cmdNum == 0) {
 						lastNTag = x;
+
+						if (currentLineSize == 1) {
+							Logger.warn("Empty statement at line {} ({})", lineNum, lastNTag);
+							break;
+						}
+
 						continue;
 					} else {
 						remainingArgs--;
@@ -148,7 +138,7 @@ public class Parser {
 					// spindle speed
 					if (lastCmdExists && lastCmd.equals("M3")) {
 						if (Pattern.compile("[S]\\d+").matcher(x).matches()) {
-							Logger.debug("Found S value: {}", x);
+							Logger.debug("Detected S value: {}", x);
 							cmdList.add(x);
 							lastCmdExists = false;
 							lastCmd = "";
@@ -204,9 +194,15 @@ public class Parser {
 							cmdList.add(x);
 							continue;
 
-						} else if (Pattern.compile("[F]\\d+").matcher(x).matches()) {
+						} else if (Pattern.compile("[F]((\\d+\\.\\d+)|(\\d+)|(\\.\\d+))").matcher(x).matches()) {
 
 							Logger.debug("Detected F value: {}", x);
+							cmdList.add(x);
+							continue;
+
+						} else if (Pattern.compile("[S]\\d+").matcher(x).matches()) {
+
+							Logger.debug("Detected S value: {}", x);
 							cmdList.add(x);
 							continue;
 
@@ -218,12 +214,18 @@ public class Parser {
 
 						}
 					}
-					
+
 					if (Pattern.compile("[GMT]\\d+").matcher(x).matches()) {
 						char gCodeCmd = x.charAt(0);
+
+						if (gCodeCmd == 'T') {
+							Logger.debug("Ignoring T tag on line {}, block {}", lineNum, cmdNum);
+							continue;
+						}
+
 						int gCodeValue = Integer.parseInt(x.substring(1));
 						String gCode = gCodeCmd + String.valueOf(gCodeValue);
-						
+
 						switch (gCode) {
 						case "G4":
 						case "G5":
@@ -294,20 +296,21 @@ public class Parser {
 							lastCmd = gCode;
 							break;
 						default:
-							if (gCode.startsWith("T")) {
-								Logger.debug("Ignoring T tag on line {}, block {}", lineNum, cmdNum);
-							} else {
-								Logger.error("Invalid code on line {} block {} ({})", lineNum, cmdNum, lastNTag);
-								valid = false;
-								loopExit = true;
-								break;
-							}
+							Logger.error("Invalid code on line {} block {} ({})", lineNum, cmdNum, lastNTag);
+							valid = false;
+							loopExit = true;
+							break;
 						}
-						
+
+					} else if (Pattern.compile("[S]\\d+").matcher(x).matches()) {
+						Logger.debug("Detected S value: {}", x);
+						cmdList.add(x);
+					} else if (Pattern.compile("[F]((\\d+\\.\\d+)|(\\d+)|(\\.\\d+))").matcher(x).matches()) {
+						Logger.debug("Detected F value: {}", x);
+						cmdList.add(x);
 					} else {
 						Logger.error("Invalid code on line {} block {} ({})", lineNum, cmdNum, lastNTag);
 						valid = false;
-						loopExit = true;
 						break;
 					}
 
@@ -318,27 +321,20 @@ public class Parser {
 
 				}
 
-				// Make sure X Y or Z tag was given for G00 and G01
-				if (lastCmdExists && (lastCmd.equals("G0") || lastCmd.equals("G1"))) {
-					if (!(xExists || yExists || zExists) || (iExists || jExists)) {
-						Logger.error("{} must be supplied with X Y or Z tag on line {} ({})", lastCmd, lineNum,
+				// Make sure required arguments exists for g0/g1/g2/g3
+				if (lastCmdExists && (lastCmd.equals("G0") || lastCmd.equals("G1") || lastCmd.equals("G2")
+						|| lastCmd.equals("G3"))) {
+					if (!(xExists || yExists || zExists || iExists || jExists)) {
+						Logger.error("{} must be supplied with X/Y/Z/I/J tag on line {} ({})", lastCmd, lineNum,
 								lastNTag);
 						valid = false;
 					}
 				}
 
-				// Make sure I and J tag was given for G02 and G03
-				if (lastCmdExists && (lastCmd.equals("G2") || lastCmd.equals("G3"))) {
-					if (zExists || !(iExists && jExists)) {
-						Logger.error("{} must be supplied with I and J tag on line {} ({})", lastCmd, lineNum, lastNTag);
-						valid = false;
-					}
-				}
-				
 				// Check if M03 has spindle speed following it
 				if (lastCmdExists && lastCmd.equals("M3") && remainingArgs == 0) {
-					Logger.error("M03 must be followed by S tag indicating spindle speed on line {} ({})",
-							lineNum, lastNTag);
+					Logger.error("M03 must be followed by S tag indicating spindle speed on line {} ({})", lineNum,
+							lastNTag);
 					valid = false;
 				}
 
@@ -367,13 +363,9 @@ public class Parser {
 				Logger.error("Parse failed!");
 
 			if (Shared.DEBUG_MODE) {
-				System.out.println("\n\nCODE ARRAY\n");
-
 				for (ArrayList<String> line : gCodeArray) {
 					Logger.debug("----- {} -----", line.toString());
 				}
-
-				System.out.println("\n\n\n");
 			}
 
 			return valid;

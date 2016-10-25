@@ -60,14 +60,12 @@ import java.util.concurrent.locks.ReentrantLock;
 
 import javax.imageio.ImageIO;
 import javax.swing.ImageIcon;
-import javax.swing.JButton;
 import javax.swing.JDialog;
 import javax.swing.JEditorPane;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JMenuItem;
-import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
@@ -88,6 +86,7 @@ import org.pmw.tinylog.Configurator;
 import org.pmw.tinylog.Level;
 import org.pmw.tinylog.Logger;
 
+import com.alee.laf.scroll.WebScrollBar;
 import com.jogamp.opengl.GL2;
 import com.jogamp.opengl.GLAutoDrawable;
 import com.jogamp.opengl.GLCapabilities;
@@ -97,9 +96,6 @@ import com.jogamp.opengl.awt.GLCanvas;
 import com.jogamp.opengl.glu.GLU;
 import com.jogamp.opengl.util.Animator;
 import com.jogamp.opengl.util.awt.TextRenderer;
-
-// TODO
-// Switch to float values in gl loop
 
 public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotionListener, MouseListener, KeyListener,
 		LogWriter, DropTargetListener {
@@ -112,11 +108,12 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	private JSlider timeSlider;
 	private JSlider generationMultiplierSlider;
 	private JSlider scaleSlider;
+	private JTextPane logTextArea;
 	private CustomJButton playButton;
 	private JDialog loadingDialog;
 	private JDialog parseErrorDialog;
 	private JDialog informationDialog;
-	private JTextPane logTextArea;
+	private JDialog invalidExtensionDialog;
 
 	private CustomJTextField currentCmdText;
 	private CustomJTextField currentFeedRateText;
@@ -162,6 +159,9 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	private float minX;
 	private float maxX;
 
+	private int totalTicks;
+	private volatile int loopNum;
+
 	private volatile boolean lockHorizAxis;
 	private volatile boolean lockVertAxis;
 	private volatile boolean decreaseSensitivity;
@@ -170,9 +170,11 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	private volatile boolean isPlaying;
 	private volatile boolean displayFileDropMessage;
 	private volatile boolean displayBoundingBox;
+	private volatile boolean displayAxisLabels;
+	private volatile boolean displayAxis;
+	private volatile boolean boundsExist;
 
 	private volatile ByteBuffer screenshotBuffer;
-	private volatile ArrayList<float[][]> vertexValuesGL;
 	private volatile ArrayList<float[][]> vertexValues;
 	private volatile ArrayList<Color> curLineColor;
 	private volatile ArrayList<String> spindleSpeedText;
@@ -201,6 +203,13 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		}
 	};
 
+	private Runnable showInvalidExtensionDialog = new Runnable() {
+		@Override
+		public void run() {
+			invalidExtensionDialog.setVisible(true);
+		}
+	};
+
 	private Runnable showInformationDialog = new Runnable() {
 		@Override
 		public void run() {
@@ -222,12 +231,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 
 			while (true) {
 				animateLock.lock();
-				int loopNum = (int) (vertexValues.size() * currentTimePercent);
-				ArrayList<float[][]> temp = new ArrayList<float[][]>();
-
-				for (int i = 0; i < loopNum; i++) {
-					temp.add(vertexValues.get(i));
-				}
+				loopNum = (int) (totalTicks * currentTimePercent);
 
 				if (loopNum > 0) {
 					currentCmdText.setText(currentCommandText.get(loopNum - 1));
@@ -239,7 +243,6 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 					currentFeedRateText.setText("");
 				}
 
-				vertexValuesGL = temp;
 				animateLock.unlock();
 
 				try {
@@ -271,9 +274,9 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 					}
 				}
 
-				if ((int) currentTimePercent == 0 && currentTimeScale.size() > 0)
+				if (currentTimePercent <= 0.001f && currentTimeScale.size() > 0)
 					timeScale = (long) currentTimeScale.get(0);
-				else if (currentTimePercent > 0 && currentTimeScale.size() > 0)
+				else if (currentTimePercent > 0.001f && currentTimeScale.size() > 0)
 					timeScale = (long) currentTimeScale.get((int) (currentTimePercent * currentTimeScale.size()) - 1);
 				else
 					timeScale = 1;
@@ -301,16 +304,8 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 			stopPlayback();
 
 			Logger.info("Attempting to load: {}", filePath);
-			
-			long startTime = System.currentTimeMillis();
 
-			if (Shared.DEBUG_MODE) {
-				try {
-					Thread.sleep(750);
-				} catch (InterruptedException e) {
-					Logger.error(e);
-				}
-			}
+			long startTime = System.currentTimeMillis();
 
 			Parser parser = new Parser(filePath);
 			boolean parseSuccess = parser.parse();
@@ -332,14 +327,15 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 					glLock.lock();
 					animateLock.lock();
 
-					vertexValuesGL = new ArrayList<float[][]>();
 					vertexValues = interpreter.getVertexValues();
 					curLineColor = interpreter.getCurrentLineColor();
 					feedRateText = interpreter.getFeedRateText();
 					currentCommandText = interpreter.getCurrentCommandText();
 					spindleSpeedText = interpreter.getSpindleSpeedText();
 					currentTimeScale = interpreter.getCurrentTimeScale();
-					
+					totalTicks = interpreter.getTotalTicks();
+					loopNum = (int) (totalTicks * currentTimePercent);
+
 					if (parser.getMeasurementMode() == MeasurementMode.INCH) {
 						measurementModeText.setText("INCH");
 					} else if (parser.getMeasurementMode() == MeasurementMode.MILLIMETER) {
@@ -352,6 +348,8 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 					maxY = interpreter.getBounds()[3];
 					minZ = interpreter.getBounds()[4];
 					maxZ = interpreter.getBounds()[5];
+
+					boundsExist = true;
 
 					float minXT = interpreter.getBounds()[0] / Shared.SEGMENT_SCALE_MULTIPLIER;
 					float maxXT = interpreter.getBounds()[1] / Shared.SEGMENT_SCALE_MULTIPLIER;
@@ -381,16 +379,19 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 
 					Logger.debug("Bounding box: {}", Arrays.toString(interpreter.getBounds()));
 
-					animateLock.unlock();
-					glLock.unlock();
+					frame.setTitle("GCI - " + currentFilePath);
 
 					long elapsedTime = System.currentTimeMillis() - startTime;
-					
+
 					Logger.info("Loaded file in {}ms", elapsedTime);
+
+					glLock.unlock();
+					animateLock.unlock();
 				}
 			}
 
 			runOnNewThread(dismissLoadingDialog);
+			frame.requestFocus();
 
 			if (!parseSuccess || !interpSuccess)
 				runOnNewThread(showParseErrorDialog);
@@ -424,6 +425,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 				}
 			}
 
+			g.dispose();
 			Logger.debug("Copied bytes to buffered image");
 
 			if (this.clipboard) {
@@ -517,11 +519,13 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		this.isPlaying = false;
 		this.displayFileDropMessage = false;
 		this.displayBoundingBox = false;
+		this.displayAxis = true;
+		this.displayAxisLabels = true;
+		this.boundsExist = false;
 
 		this.currentFilePath = "";
 
 		this.vertexValues = new ArrayList<float[][]>();
-		this.vertexValuesGL = new ArrayList<float[][]>();
 		this.curLineColor = new ArrayList<Color>();
 		this.spindleSpeedText = new ArrayList<String>();
 		this.feedRateText = new ArrayList<String>();
@@ -565,10 +569,10 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 
 		this.glHeight = glcanvas.getHeight();
 		this.glWidth = glcanvas.getWidth();
-		this.screenshotBuffer = ByteBuffer.allocate(this.glHeight * this.glWidth * 3);
 
-		frame = new Frame("GCI - " + Shared.VERSION);
+		frame = new Frame("GCI");
 		frame.setSize(800, 800);
+		frame.setMinimumSize(new Dimension(400, 400));
 		frame.setResizable(true);
 		frame.add(glcanvas);
 		frame.setLocationRelativeTo(null);
@@ -689,13 +693,42 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 			System.exit(-1);
 		}
 
-		parseErrorDialog = new JDialog(frame, "Error", true);
+		invalidExtensionDialog = new JDialog(frame, "Invalid File Type", true);
+		JPanel extensionErrorDialogMessagePane = new JPanel();
+		JPanel extensionErrorDialogButtonPane = new JPanel();
+		JLabel extensionErrorMessageLabel = new JLabel("File must be of extension *.nc", JLabel.CENTER);
 
+		CustomJButton extensionErrorDialogButton = new CustomJButton("Ok");
+		extensionErrorDialogButton.setFocusPainted(false);
+		extensionErrorDialogButton.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				invalidExtensionDialog.setVisible(false);
+			}
+		});
+
+		extensionErrorMessageLabel.setForeground(Color.WHITE);
+		extensionErrorMessageLabel.setFont(Shared.UI_FONT);
+		extensionErrorDialogMessagePane.add(extensionErrorMessageLabel);
+		extensionErrorDialogMessagePane.setBackground(Shared.UI_COLOR);
+		extensionErrorDialogMessagePane.setBorder(new EmptyBorder(5, 20, 0, 20));
+		extensionErrorDialogButtonPane.add(extensionErrorDialogButton);
+		extensionErrorDialogButtonPane.setBackground(Shared.UI_COLOR);
+
+		invalidExtensionDialog.add(extensionErrorDialogMessagePane);
+		invalidExtensionDialog.add(extensionErrorDialogButtonPane, BorderLayout.SOUTH);
+		invalidExtensionDialog
+				.setIconImage(new ImageIcon(getClass().getClassLoader().getResource("res/error_dark.png")).getImage());
+		invalidExtensionDialog.setResizable(false);
+		invalidExtensionDialog.pack();
+		invalidExtensionDialog.setLocationRelativeTo(frame);
+
+		parseErrorDialog = new JDialog(frame, "Error", true);
 		JPanel parseErrorDialogMessagePane = new JPanel();
 		JPanel parseErrorDialogButtonPane = new JPanel();
-		JLabel parseErrorMessageLabel = new JLabel("Error loading file. See log for more details.",
-				new ImageIcon(getClass().getClassLoader().getResource("res/error.png")), JLabel.CENTER);
-		JButton parseErrorDialogButton = new JButton("Ok");
+		JLabel parseErrorMessageLabel = new JLabel("Error loading file. See log for more details.", JLabel.CENTER);
+		CustomJButton parseErrorDialogButton = new CustomJButton("Ok");
+		parseErrorDialogButton.setFocusPainted(false);
 		parseErrorDialogButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
@@ -707,17 +740,17 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		parseErrorMessageLabel.setFont(Shared.UI_FONT);
 		parseErrorDialogMessagePane.add(parseErrorMessageLabel);
 		parseErrorDialogMessagePane.setBackground(Shared.UI_COLOR);
+		parseErrorDialogMessagePane.setBorder(new EmptyBorder(5, 20, 0, 20));
 		parseErrorDialogButtonPane.add(parseErrorDialogButton);
 		parseErrorDialogButtonPane.setBackground(Shared.UI_COLOR);
 
 		parseErrorDialog.add(parseErrorDialogMessagePane);
 		parseErrorDialog.add(parseErrorDialogButtonPane, BorderLayout.SOUTH);
-		parseErrorDialog.setSize(new Dimension(400, 200));
 		parseErrorDialog
 				.setIconImage(new ImageIcon(getClass().getClassLoader().getResource("res/error_dark.png")).getImage());
-		parseErrorDialog.setLocationRelativeTo(frame);
 		parseErrorDialog.setResizable(false);
 		parseErrorDialog.pack();
+		parseErrorDialog.setLocationRelativeTo(frame);
 
 		menuBar = new MenuBar();
 		Menu file = new Menu("File");
@@ -819,6 +852,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		detailsFrame = new JFrame("Details");
 		detailsFrame.setLayout(new GridBagLayout());
 		detailsFrame.setSize(400, 800);
+		detailsFrame.setMinimumSize(new Dimension(200, 400));
 		detailsFrame.setLocation((int) frame.getLocation().getX() + 800, (int) frame.getLocation().getY());
 		detailsFrame.setResizable(true);
 		detailsFrame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
@@ -845,6 +879,9 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		noWrapPanel.add(logTextArea);
 		JScrollPane logScroller = new JScrollPane(noWrapPanel, JScrollPane.VERTICAL_SCROLLBAR_ALWAYS,
 				JScrollPane.HORIZONTAL_SCROLLBAR_ALWAYS);
+
+		logScroller.setVerticalScrollBar(new WebScrollBar(WebScrollBar.VERTICAL));
+		logScroller.setHorizontalScrollBar(new WebScrollBar(WebScrollBar.HORIZONTAL));
 		logScroller.getVerticalScrollBar().setUnitIncrement(16);
 		new SmartScroller(logScroller);
 
@@ -921,7 +958,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 			public void actionPerformed(ActionEvent e) {
 				if (e.getSource() instanceof JTextPane)
 					Logger.debug("found");
-				
+
 				String selectedText = logTextArea.getSelectedText();
 				if (selectedText != null) {
 					StringSelection text = new StringSelection(selectedText);
@@ -971,6 +1008,8 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		noWrapPanel2.add(boundsText);
 		JScrollPane boundsTextScroller = new JScrollPane(noWrapPanel2, JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,
 				JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
+		boundsTextScroller.setVerticalScrollBar(new WebScrollBar(WebScrollBar.VERTICAL));
+		boundsTextScroller.setHorizontalScrollBar(new WebScrollBar(WebScrollBar.HORIZONTAL));
 
 		currentCmdTextTitle.setText("Command");
 		currentCmdText.setText("");
@@ -1001,6 +1040,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 
 		controlFrame = new JFrame("Controls");
 		controlFrame.setSize(400, 800);
+		controlFrame.setMinimumSize(new Dimension(200, 400));
 		controlFrame.setLocation((int) frame.getLocation().getX() - 400, (int) frame.getLocation().getY());
 		controlFrame.setResizable(true);
 		controlFrame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
@@ -1062,10 +1102,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		timePanel.add(timeDes, BorderLayout.WEST);
 		timePanel.add(timeSlider, BorderLayout.CENTER);
 
-		// TODO adjust arc generation time scale as scale value is changed
-		// disable sliders when values are being generated
-
-		scaleSlider = new JSlider(JSlider.HORIZONTAL, 1, 25, Shared.SEGMENT_SCALE_MULTIPLIER);
+		scaleSlider = new JSlider(JSlider.HORIZONTAL, 1, 2000, 1000);
 		scaleSlider.setEnabled(false);
 		scaleSlider.setUI(new CustomSliderUI(scaleSlider));
 		scaleSlider.setBackground(Shared.UI_COLOR);
@@ -1074,8 +1111,9 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		scaleSlider.addChangeListener(new ChangeListener() {
 			@Override
 			public void stateChanged(ChangeEvent e) {
-				Shared.SEGMENT_SCALE_MULTIPLIER = scaleSlider.getValue();
-				Logger.debug("Scale slider value changed {}", scaleSlider.getValue());
+				Shared.SEGMENT_SCALE_MULTIPLIER = (scaleSlider.getValue() / 2000f) * 20;
+				Logger.debug("Scale slider value changed {}, {}", scaleSlider.getValue(),
+						Shared.SEGMENT_SCALE_MULTIPLIER);
 			}
 		});
 
@@ -1088,7 +1126,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		scalePanel.add(scaleDes, BorderLayout.WEST);
 		scalePanel.add(scaleSlider, BorderLayout.CENTER);
 
-		generationMultiplierSlider = new JSlider(JSlider.HORIZONTAL, 10, 50, Shared.SEGMENT_GENERATION_MULTIPLIER);
+		generationMultiplierSlider = new JSlider(JSlider.HORIZONTAL, 75, 2000, 150);
 		generationMultiplierSlider.setEnabled(false);
 		generationMultiplierSlider.setUI(new CustomSliderUI(generationMultiplierSlider));
 		generationMultiplierSlider.setBackground(Shared.UI_COLOR);
@@ -1097,8 +1135,9 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		generationMultiplierSlider.addChangeListener(new ChangeListener() {
 			@Override
 			public void stateChanged(ChangeEvent e) {
-				Shared.SEGMENT_GENERATION_MULTIPLIER = generationMultiplierSlider.getValue();
-				Logger.debug("Generation slider value changed {}", generationMultiplierSlider.getValue());
+				Shared.SEGMENT_GENERATION_MULTIPLIER = (generationMultiplierSlider.getValue() / 1000f) * 200;
+				Logger.debug("Generation slider value changed {}, {}", generationMultiplierSlider.getValue(),
+						Shared.SEGMENT_GENERATION_MULTIPLIER);
 			}
 		});
 
@@ -1176,13 +1215,18 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 				animateLock.lock();
 
 				vertexValues = new ArrayList<float[][]>();
-				vertexValuesGL = new ArrayList<float[][]>();
 				curLineColor = new ArrayList<Color>();
 				spindleSpeedText = new ArrayList<String>();
 				feedRateText = new ArrayList<String>();
 				currentCommandText = new ArrayList<String>();
 				boundsText.setText("");
 				measurementModeText.setText("");
+
+				totalTicks = 0;
+				loopNum = 0;
+
+				frame.setTitle("GCI");
+				boundsExist = false;
 
 				glLock.unlock();
 				animateLock.unlock();
@@ -1216,6 +1260,8 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	}
 
 	private void startPlayback() {
+		if (timeSlider.getValue() == timeSlider.getMaximum())
+			timeSlider.setValue(timeSlider.getMinimum());
 		isPlaying = true;
 		playButton.setText("Stop");
 		timeSlider.setEnabled(false);
@@ -1242,51 +1288,55 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		gl.glRotatef(curAngleX, 0, 1, 0);
 
 		// Draw coordinate axis
-		RenderHelpers.renderLine(gl, Color.RED, new float[] { 0f, 0f, 0f }, new float[] { 40f, 0f, 0f }, 6f);
-		RenderHelpers.renderLine(gl, Color.RED, new float[] { 0f, 0f, 0f }, new float[] { 0f, 40f, 0f }, 6f);
-		RenderHelpers.renderLine(gl, Color.RED, new float[] { 0f, 0f, 0f }, new float[] { 0f, 0f, -40f }, 6f);
 
-		// TODO change gl line method to connected line not individual segments
+		if (this.displayAxis) {
+			RenderHelpers.renderLine(gl, Color.RED, new float[] { 0f, 0f, 0f }, new float[] { 40f, 0f, 0f }, 6f);
+			RenderHelpers.renderLine(gl, Color.RED, new float[] { 0f, 0f, 0f }, new float[] { 0f, 40f, 0f }, 6f);
+			RenderHelpers.renderLine(gl, Color.RED, new float[] { 0f, 0f, 0f }, new float[] { 0f, 0f, -40f }, 6f);
+		}
 
 		if (glLock.tryLock()) {
-			for (int i = 0; i < this.vertexValuesGL.size(); i++) {
-				RenderHelpers.renderLine(gl, this.curLineColor.get(i), this.vertexValuesGL.get(i)[0],
-						this.vertexValuesGL.get(i)[1], 2.5f);
+			int loop = this.loopNum;
+			for (int i = 0; i < loop; i++) {
+				Color c = this.curLineColor.get(i);
+				RenderHelpers.renderLine(gl, c, this.vertexValues.get(i)[0], this.vertexValues.get(i)[1], 2.5f);
+			}
+
+			if (this.boundsExist && this.displayBoundingBox) {
+				RenderHelpers.renderLine(gl, Color.YELLOW, new float[] { minX, minZ, -minY },
+						new float[] { maxX, minZ, -minY }, 4.5f);
+				RenderHelpers.renderLine(gl, Color.YELLOW, new float[] { maxX, minZ, -minY },
+						new float[] { maxX, maxZ, -minY }, 4.5f);
+				RenderHelpers.renderLine(gl, Color.YELLOW, new float[] { maxX, maxZ, -minY },
+						new float[] { minX, maxZ, -minY }, 4.5f);
+				RenderHelpers.renderLine(gl, Color.YELLOW, new float[] { minX, maxZ, -minY },
+						new float[] { minX, minZ, -minY }, 4.5f);
+				RenderHelpers.renderLine(gl, Color.YELLOW, new float[] { minX, minZ, -maxY },
+						new float[] { maxX, minZ, -maxY }, 4.5f);
+				RenderHelpers.renderLine(gl, Color.YELLOW, new float[] { maxX, minZ, -maxY },
+						new float[] { maxX, maxZ, -maxY }, 4.5f);
+				RenderHelpers.renderLine(gl, Color.YELLOW, new float[] { maxX, maxZ, -maxY },
+						new float[] { minX, maxZ, -maxY }, 4.5f);
+				RenderHelpers.renderLine(gl, Color.YELLOW, new float[] { minX, maxZ, -maxY },
+						new float[] { minX, minZ, -maxY }, 4.5f);
+				RenderHelpers.renderLine(gl, Color.YELLOW, new float[] { minX, minZ, -minY },
+						new float[] { minX, minZ, -maxY }, 4.5f);
+				RenderHelpers.renderLine(gl, Color.YELLOW, new float[] { maxX, minZ, -minY },
+						new float[] { maxX, minZ, -maxY }, 4.5f);
+				RenderHelpers.renderLine(gl, Color.YELLOW, new float[] { minX, maxZ, -minY },
+						new float[] { minX, maxZ, -maxY }, 4.5f);
+				RenderHelpers.renderLine(gl, Color.YELLOW, new float[] { maxX, maxZ, -minY },
+						new float[] { maxX, maxZ, -maxY }, 4.5f);
 			}
 
 			glLock.unlock();
 		}
 
-		if (this.displayBoundingBox) {
-			RenderHelpers.renderLine(gl, Color.YELLOW, new float[] { minX, minZ, -minY },
-					new float[] { maxX, minZ, -minY }, 4.5f);
-			RenderHelpers.renderLine(gl, Color.YELLOW, new float[] { maxX, minZ, -minY },
-					new float[] { maxX, maxZ, -minY }, 4.5f);
-			RenderHelpers.renderLine(gl, Color.YELLOW, new float[] { maxX, maxZ, -minY },
-					new float[] { minX, maxZ, -minY }, 4.5f);
-			RenderHelpers.renderLine(gl, Color.YELLOW, new float[] { minX, maxZ, -minY },
-					new float[] { minX, minZ, -minY }, 4.5f);
-			RenderHelpers.renderLine(gl, Color.YELLOW, new float[] { minX, minZ, -maxY },
-					new float[] { maxX, minZ, -maxY }, 4.5f);
-			RenderHelpers.renderLine(gl, Color.YELLOW, new float[] { maxX, minZ, -maxY },
-					new float[] { maxX, maxZ, -maxY }, 4.5f);
-			RenderHelpers.renderLine(gl, Color.YELLOW, new float[] { maxX, maxZ, -maxY },
-					new float[] { minX, maxZ, -maxY }, 4.5f);
-			RenderHelpers.renderLine(gl, Color.YELLOW, new float[] { minX, maxZ, -maxY },
-					new float[] { minX, minZ, -maxY }, 4.5f);
-			RenderHelpers.renderLine(gl, Color.YELLOW, new float[] { minX, minZ, -minY },
-					new float[] { minX, minZ, -maxY }, 4.5f);
-			RenderHelpers.renderLine(gl, Color.YELLOW, new float[] { maxX, minZ, -minY },
-					new float[] { maxX, minZ, -maxY }, 4.5f);
-			RenderHelpers.renderLine(gl, Color.YELLOW, new float[] { minX, maxZ, -minY },
-					new float[] { minX, maxZ, -maxY }, 4.5f);
-			RenderHelpers.renderLine(gl, Color.YELLOW, new float[] { maxX, maxZ, -minY },
-					new float[] { maxX, maxZ, -maxY }, 4.5f);
+		if (this.displayAxisLabels) {
+			RenderHelpers.render3DText(textRenderer3D, "X", 41, 0, 0, 0.05f);
+			RenderHelpers.render3DText(textRenderer3D, "Z", -1, 41, 0, 0.05f);
+			RenderHelpers.render3DText(textRenderer3D, "Y", -1, 0, -41, 0.05f);
 		}
-		
-		RenderHelpers.render3DText(textRenderer3D, "X", 41, 0, 0, 0.05f);
-		RenderHelpers.render3DText(textRenderer3D, "Z", -1, 41, 0, 0.05f);
-		RenderHelpers.render3DText(textRenderer3D, "Y", -1, 0, -41, 0.05f);
 
 		if (this.displayFileDropMessage) {
 			RenderHelpers.renderText(textRenderer, "Drop file here.", 10, 10, this.glWidth, this.glHeight);
@@ -1295,6 +1345,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		if (this.takeScreenshot) {
 			Logger.info("Taking screenshot...");
 			this.takeScreenshot = false;
+			this.screenshotBuffer = ByteBuffer.allocate(this.glHeight * this.glWidth * 3);
 			this.screenshotBuffer.clear();
 			gl.glReadPixels(0, 0, this.glWidth, this.glHeight, GL2.GL_RGB, GL2.GL_BYTE, this.screenshotBuffer);
 			new Screenshot(this.screenshotBuffer, this.glHeight, this.glWidth, this.screenshotToClipboard).start();
@@ -1341,6 +1392,9 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 
 	@Override
 	public void reshape(GLAutoDrawable glad, int x, int y, int width, int height) {
+		this.glHeight = height;
+		this.glWidth = width;
+
 		GL2 gl = glad.getGL().getGL2();
 		gl.glMatrixMode(GL2.GL_PROJECTION);
 		gl.glLoadIdentity();
@@ -1385,8 +1439,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 			fileLoader.start();
 		} else {
 			Logger.warn("Invalid file type {}", fileExtension);
-			JOptionPane.showMessageDialog(this.frame, "File must be of extenstion *.nc", "Invalid File Type",
-					JOptionPane.WARNING_MESSAGE);
+			runOnNewThread(showInvalidExtensionDialog);
 		}
 	}
 
@@ -1506,15 +1559,13 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 			float thetady = (float) (Math.atan(dy / 100.0)
 					* (Shared.ROTATE_SENSITIVITY_MULTIPLIER / getDecreaseSensitivityMultiplier()));
 
-			// TODO reset angle if over 2pi
-
 			if (lockHorizAxis) {
-				curAngleX += thetadx;
+				curAngleX = (curAngleX + thetadx) % 360f;
 			} else if (lockVertAxis) {
-				curAngleY += thetady;
+				curAngleY = (curAngleY + thetady) % 360f;
 			} else {
-				curAngleX += thetadx;
-				curAngleY += thetady;
+				curAngleX = (curAngleX + thetadx) % 360f;
+				curAngleY = (curAngleY + thetady) % 360f;
 			}
 
 			Logger.debug("Rotate - curAngleX: {} curAngleY: {}", curAngleX, curAngleY);
@@ -1579,6 +1630,15 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		} else if (e.getKeyCode() == KeyEvent.VK_Q) {
 			this.displayBoundingBox = !this.displayBoundingBox;
 			Logger.debug("bounding box state: {}", this.displayBoundingBox);
+		} else if (e.getKeyCode() == KeyEvent.VK_SPACE) {
+			if (this.isPlaying)
+				stopPlayback();
+			else
+				startPlayback();
+		} else if (e.getKeyCode() == KeyEvent.VK_W) {
+			this.displayAxis = !this.displayAxis;
+		} else if (e.getKeyCode() == KeyEvent.VK_E) {
+			this.displayAxisLabels = !this.displayAxisLabels;
 		} else {
 			return;
 		}
@@ -1586,9 +1646,6 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 
 	@Override
 	public void keyReleased(KeyEvent e) {
-
-		// TODO axis lock text resets if both buttons are pressed and released
-
 		if (lockHorizAxis && e.getKeyCode() == KeyEvent.VK_Z) {
 			lockHorizAxis = false;
 		} else if (lockVertAxis && e.getKeyCode() == KeyEvent.VK_X) {

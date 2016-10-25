@@ -2,8 +2,6 @@ package com.skyguy126.gci;
 
 import java.awt.Color;
 
-import org.pmw.tinylog.Logger;
-
 import com.jogamp.opengl.GL2;
 import com.jogamp.opengl.util.awt.TextRenderer;
 
@@ -70,7 +68,7 @@ public class RenderHelpers {
 		gl.glVertex3f(end[0], end[1], end[2]);
 		gl.glEnd();
 	}
-
+	
 	public static void renderText(TextRenderer textRenderer, String text, int posX, int posY, int width, int height) {
 		textRenderer.beginRendering(width, height);
 		textRenderer.setColor(Color.WHITE);
@@ -85,27 +83,6 @@ public class RenderHelpers {
 		textRenderer.setColor(Color.WHITE);
 		textRenderer.setSmoothing(true);
 		textRenderer.draw3D(text, posX, posY, posZ, scale);
-		textRenderer.end3DRendering();
-		textRenderer.flush();
-	}
-
-	public static void renderStatic3DText(GL2 gl, TextRenderer textRenderer, String text, int posX, int posY, int posZ,
-			float scale, float curAngleX, float curAngleY) {
-		
-		// TODO
-		
-		textRenderer.begin3DRendering();
-		textRenderer.setColor(Color.WHITE);
-		textRenderer.setSmoothing(true);
-		float radX = (float) Math.toRadians(curAngleX);
-		float radY = (float) Math.toRadians(curAngleY);
-		float staticX = (float) (Math.cos(-radX) * posX);
-		float staticZ = (float) (Math.sin(-radX) * posX);
-		float hyp = (float) (Math.sqrt(Math.pow(staticX, 2) + Math.pow(staticZ, 2)));
-		float staticY = (float) (Math.sin(-radY) * hyp);
-		textRenderer.draw3D(text, staticX, 0, staticZ, scale);
-		gl.glRotatef(-curAngleX, 0, 1, 0);
-		gl.glRotatef(-curAngleY, 1, 0, 0);
 		textRenderer.end3DRendering();
 		textRenderer.flush();
 	}

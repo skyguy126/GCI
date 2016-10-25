@@ -7,6 +7,8 @@ import java.util.Arrays;
 import org.pmw.tinylog.Logger;
 
 public class Interpreter {
+	private static final Color lineColorBlue = new Color(0, 255, 255);
+
 	private ArrayList<ArrayList<String>> gCodeArray;
 
 	private ArrayList<float[][]> vertexValues;
@@ -26,7 +28,9 @@ public class Interpreter {
 	private float maxY;
 	private float minX;
 	private float maxX;
-
+	
+	private boolean rampFlag;
+	
 	private int totalTicks;
 
 	public Interpreter(ArrayList<ArrayList<String>> g) {
@@ -40,11 +44,11 @@ public class Interpreter {
 		this.currentLineColor = new ArrayList<Color>();
 		this.currentTimeScale = new ArrayList<Integer>();
 
-		this.totalTicks = 0;
-
 		this.startX = 0;
 		this.startY = 0;
 		this.startZ = 0;
+		
+		this.totalTicks = 0;
 
 		this.minX = 0f;
 		this.maxX = 0f;
@@ -52,6 +56,8 @@ public class Interpreter {
 		this.maxY = 0f;
 		this.minZ = 0f;
 		this.maxZ = 0f;
+		
+		this.rampFlag = false;
 	}
 
 	public boolean generateAbsolute() {
@@ -84,10 +90,35 @@ public class Interpreter {
 
 		for (int i = 0; i < gCodeArray.size(); i++) {
 
-			// G or M command should be the first item in the array for the
-			// current line
+			// Parse all arguments in current line
+			for (int x = 0; x < gCodeArray.get(i).size(); x++) {
+				String curArg = gCodeArray.get(i).get(x);
+				Logger.debug("Current code block: {}", curArg);
+
+				if (curArg.startsWith("X"))
+					curX = Float.parseFloat(curArg.substring(1)) * Shared.SEGMENT_SCALE_MULTIPLIER;
+				else if (curArg.startsWith("Y"))
+					curY = Float.parseFloat(curArg.substring(1)) * Shared.SEGMENT_SCALE_MULTIPLIER;
+				else if (curArg.startsWith("Z"))
+					curZ = Float.parseFloat(curArg.substring(1)) * Shared.SEGMENT_SCALE_MULTIPLIER;
+				else if (curArg.startsWith("I"))
+					lastI = Float.parseFloat(curArg.substring(1)) * Shared.SEGMENT_SCALE_MULTIPLIER;
+				else if (curArg.startsWith("J"))
+					lastJ = Float.parseFloat(curArg.substring(1)) * Shared.SEGMENT_SCALE_MULTIPLIER;
+				else if (curArg.startsWith("F")) {
+					curFeedRateText = curArg.substring(1);
+					curFeedRate = Float.parseFloat(curFeedRateText);
+				} else if (curArg.startsWith("S")) {
+					curSpindleSpeedText = curArg.substring(1);
+				}
+			}
+
 			curCmd = gCodeArray.get(i).get(0);
-			Logger.debug("{}", curCmd);
+
+			if (!(curCmd.startsWith("G") || curCmd.startsWith("M")))
+				continue;
+
+			Logger.debug("Current command: {}", curCmd);
 
 			// Check for the command and perform specific actions
 			switch (curCmd) {
@@ -100,27 +131,6 @@ public class Interpreter {
 				break;
 			case "G0":
 			case "G1":
-
-				// Extract the X Y and Z float values from line
-				// Gather F value also
-
-				for (int x = 1; x < gCodeArray.get(i).size(); x++) {
-					String curArg = gCodeArray.get(i).get(x);
-					Logger.debug("Current arg for {}: {}", curCmd, curArg);
-
-					if (curArg.startsWith("X"))
-						curX = Float.parseFloat(curArg.substring(1)) * Shared.SEGMENT_SCALE_MULTIPLIER;
-					else if (curArg.startsWith("Y"))
-						curY = Float.parseFloat(curArg.substring(1)) * Shared.SEGMENT_SCALE_MULTIPLIER;
-					else if (curArg.startsWith("Z"))
-						curZ = Float.parseFloat(curArg.substring(1)) * Shared.SEGMENT_SCALE_MULTIPLIER;
-					else if (curArg.startsWith("F")) {
-						curFeedRateText = curArg.substring(1);
-						curFeedRate = Float.parseFloat(curFeedRateText);
-					}
-
-				}
-
 				processBounds(curX, curY, curZ);
 
 				Logger.debug("X{} Y{} Z{} FeedRate {}", curX, curY, curZ, curFeedRateText);
@@ -171,7 +181,7 @@ public class Interpreter {
 					if (curCmd.equals("G0")) {
 						this.currentLineColor.add(Color.GREEN);
 					} else if (curCmd.equals("G1")) {
-						this.currentLineColor.add(Color.BLUE);
+						this.currentLineColor.add(lineColorBlue);
 					}
 
 					Logger.debug("{}", Arrays.deepToString(vertexArray));
@@ -182,7 +192,6 @@ public class Interpreter {
 					this.spindleSpeedText.add(curSpindleSpeedText);
 					this.currentCommandText.add(curCmd);
 					this.currentTimeScale.add(1);
-
 					this.totalTicks++;
 				}
 
@@ -196,28 +205,6 @@ public class Interpreter {
 			case "G2":
 			case "G3":
 				Logger.debug("Arc interpolation");
-
-				for (int x = 1; x < gCodeArray.get(i).size(); x++) {
-					String curArg = gCodeArray.get(i).get(x);
-					Logger.debug("Current arg for G00: {}", curArg);
-
-					if (curArg.startsWith("X"))
-						curX = Float.parseFloat(curArg.substring(1)) * Shared.SEGMENT_SCALE_MULTIPLIER;
-					else if (curArg.startsWith("Y"))
-						curY = Float.parseFloat(curArg.substring(1)) * Shared.SEGMENT_SCALE_MULTIPLIER;
-					else if (curArg.startsWith("Z"))
-						curZ = Float.parseFloat(curArg.substring(1)) * Shared.SEGMENT_SCALE_MULTIPLIER;
-					else if (curArg.startsWith("I"))
-						lastI = Float.parseFloat(curArg.substring(1)) * Shared.SEGMENT_SCALE_MULTIPLIER;
-					else if (curArg.startsWith("J"))
-						lastJ = Float.parseFloat(curArg.substring(1)) * Shared.SEGMENT_SCALE_MULTIPLIER;
-					else if (curArg.startsWith("F")) {
-						curFeedRateText = curArg.substring(1);
-						curFeedRate = Float.parseFloat(curFeedRateText);
-					}
-
-				}
-
 				Logger.debug("X{} Y{} Z{} I{} J{} FeedRate {}", curX, curY, curZ, lastI, lastJ, curFeedRateText);
 
 				// Find radius with distance formula
@@ -235,9 +222,11 @@ public class Interpreter {
 				if (curCmd.equals("G3")) {
 					totalTheta = 2 * Math.PI - totalTheta;
 				}
-				double totalArcSegments = (int) (totalTheta * Shared.SEGMENT_GENERATION_MULTIPLIER
+				
+				double arcLength = totalTheta * radius;
+				double totalArcSegments = (int) (arcLength * Shared.SEGMENT_GENERATION_MULTIPLIER
 						* Shared.ARC_GENERATION_MULTIPLIER / curFeedRate);
-				float dTheta = (float) (totalTheta / (totalArcSegments - 1));
+				double dTheta = totalTheta / (totalArcSegments - 1);
 
 				Logger.debug("Starting Angle: {} Ending Angle: {}", angleS, angleE);
 				Logger.debug("Last X: {} Last Y: {}", lastX, lastY);
@@ -245,8 +234,11 @@ public class Interpreter {
 				Logger.debug("curX: {} curY: {}", curX, curY);
 				Logger.debug("Total theta: {}", totalTheta);
 
-				if (curZ != lastZ)
+				if (!rampFlag && curZ != lastZ) {
 					Logger.warn("Ramping detected");
+					rampFlag = true;
+				}
+					
 
 				Logger.debug("---------- BEGIN VERTEX ARRAY ----------");
 
@@ -276,7 +268,7 @@ public class Interpreter {
 
 					this.vertexValues.add(vertexArray);
 					this.feedRateText.add(curFeedRateText);
-					this.currentLineColor.add(Color.BLUE);
+					this.currentLineColor.add(lineColorBlue);
 					this.spindleSpeedText.add(curSpindleSpeedText);
 					this.currentCommandText.add(curCmd);
 					this.currentTimeScale.add(Shared.ARC_GENERATION_MULTIPLIER);
@@ -295,8 +287,8 @@ public class Interpreter {
 			}
 		}
 
-		Logger.debug("Vertex array size: {} Total ticks: {} TimeScale Size: {} Color size: {}",
-				this.vertexValues.size(), this.totalTicks, this.currentTimeScale.size(), this.currentLineColor.size());
+		Logger.debug("Vertex array size: {} TimeScale Size: {} Color size: {}", this.vertexValues.size(),
+				this.currentTimeScale.size(), this.currentLineColor.size());
 		return true;
 	}
 
@@ -350,7 +342,7 @@ public class Interpreter {
 	public ArrayList<Color> getCurrentLineColor() {
 		return currentLineColor;
 	}
-
+	
 	public int getTotalTicks() {
 		return totalTicks;
 	}

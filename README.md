@@ -15,12 +15,12 @@
 
 ### Download
 
-Latest Version - **v0.3a**
+Latest Version - **v0.5a**
 
 *Download coming soon*
 
 #### Dependencies
-[JOGL](http://jogamp.org/jogl/www/), [TinyLog](http://www.tinylog.org/), [SmartScroller](http://tinyurl.com/zycf3zw)
+[JOGL](http://jogamp.org/jogl/www/), [TinyLog](http://www.tinylog.org/), [SmartScroller](http://tinyurl.com/zycf3zw), [weblaf](https://github.com/mgarin/weblaf)
 
 #### Resources
 [Google Material Icons](https://design.google.com/icons/),
