@@ -6,8 +6,7 @@ import java.awt.Font;
 import org.pmw.tinylog.Level;
 
 public class Shared {
-	public static final String LOG_FORMAT = "{date} - {level}: {message}";
-	public static final String VERSION = "v0.5a";
+	public static final String VERSION = "v0.6a";
 	public static final String SOURCE_CODE_URL = "https://github.com/skyguy126/GCI";
 
 	public static final boolean DEBUG_MODE = false;

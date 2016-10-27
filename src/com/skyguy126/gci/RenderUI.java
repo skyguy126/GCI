@@ -43,12 +43,10 @@ import java.awt.event.MouseWheelListener;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.awt.image.BufferedImage;
-import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.ByteBuffer;
@@ -60,8 +58,6 @@ import java.util.concurrent.locks.ReentrantLock;
 
 import javax.imageio.ImageIO;
 import javax.swing.ImageIcon;
-import javax.swing.JDialog;
-import javax.swing.JEditorPane;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
@@ -105,21 +101,28 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 
 	private JFrame detailsFrame;
 	private JFrame controlFrame;
+
 	private JSlider timeSlider;
 	private JSlider generationMultiplierSlider;
 	private JSlider scaleSlider;
-	private JTextPane logTextArea;
+
 	private CustomJButton playButton;
-	private JDialog loadingDialog;
-	private JDialog parseErrorDialog;
-	private JDialog informationDialog;
-	private JDialog invalidExtensionDialog;
+	private CustomJButton screenshotButton;
+	private CustomJButton toggleBoundingBoxButton;
+
+	private CustomJDialog parseErrorDialog;
+	private CustomJDialog invalidExtensionDialog;
+	private CustomJDialog crashDialog;
+	private LoadingDialog loadingDialog;
+	private InformationDialog informationDialog;
 
 	private CustomJTextField currentCmdText;
 	private CustomJTextField currentFeedRateText;
 	private CustomJTextField currentSpindleSpeedText;
 	private CustomJTextField measurementModeText;
+
 	private JTextPane boundsText;
+	private JTextPane logTextArea;
 
 	private TextRenderer textRenderer;
 	private TextRenderer textRenderer3D;
@@ -131,12 +134,6 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	private SimpleAttributeSet logFormat;
 	private SimpleAttributeSet boundsFormat;
 
-	private double lastX;
-	private double lastY;
-
-	private int glHeight;
-	private int glWidth;
-
 	private ReentrantLock glLock;
 	private ReentrantLock animateLock;
 
@@ -144,6 +141,12 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	private Cursor rotateCursor;
 
 	private volatile String currentFilePath;
+
+	private double lastX;
+	private double lastY;
+
+	private int glHeight;
+	private int glWidth;
 
 	private volatile float zoomDistance;
 	private volatile float curX;
@@ -202,6 +205,13 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 			parseErrorDialog.setVisible(true);
 		}
 	};
+	
+	private Runnable dismissParseErrorDialog = new Runnable() {
+		@Override
+		public void run() {
+			parseErrorDialog.setVisible(false);
+		}
+	};
 
 	private Runnable showInvalidExtensionDialog = new Runnable() {
 		@Override
@@ -209,18 +219,33 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 			invalidExtensionDialog.setVisible(true);
 		}
 	};
+	
+	private Runnable dismissInvalidExtensionDialog = new Runnable() {
+		@Override
+		public void run() {
+			invalidExtensionDialog.setVisible(false);
+		}
+	};
+	
+	private Runnable showCrashDialog = new Runnable() {
+		@Override
+		public void run() {
+			crashDialog.setVisible(true);
+		}
+	};
+	
+	private Runnable dismissCrashDialog = new Runnable() {
+		@Override
+		public void run() {
+			crashDialog.setVisible(false);
+			exit(-1);
+		}
+	};
 
 	private Runnable showInformationDialog = new Runnable() {
 		@Override
 		public void run() {
 			informationDialog.setVisible(true);
-		}
-	};
-
-	private Runnable dismissInformationDialog = new Runnable() {
-		@Override
-		public void run() {
-			informationDialog.setVisible(false);
 		}
 	};
 
@@ -248,7 +273,8 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 				try {
 					Thread.sleep(Shared.TIME_SCALE);
 				} catch (InterruptedException e) {
-					Logger.error(e);
+					Logger.error("Animate vertex values exception: {}", e);
+					return;
 				}
 			}
 		}
@@ -284,7 +310,8 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 				try {
 					Thread.sleep(Shared.TIME_SCALE / timeScale);
 				} catch (InterruptedException e) {
-					Logger.error(e);
+					Logger.error("Perform playback thread exception: {}", e);
+					return;
 				}
 			}
 		}
@@ -501,8 +528,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	}
 
 	public RenderUI(CountDownLatch status) {
-		Configurator.defaultConfig().writer(new LogController(this)).formatPattern(Shared.LOG_FORMAT)
-				.level(Shared.LOG_LEVEL).activate();
+		Configurator.defaultConfig().writer(new LogController(this)).level(Shared.LOG_LEVEL).activate();
 		Logger.debug("RUI initiated");
 
 		this.zoomDistance = 100;
@@ -515,7 +541,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		this.lockVertAxis = false;
 		this.decreaseSensitivity = false;
 		this.takeScreenshot = false;
-		this.screenshotToClipboard = false;
+		this.screenshotToClipboard = true;
 		this.isPlaying = false;
 		this.displayFileDropMessage = false;
 		this.displayBoundingBox = false;
@@ -580,7 +606,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		frame.addWindowListener(new WindowAdapter() {
 			@Override
 			public void windowClosing(WindowEvent evt) {
-				exit();
+				exit(0);
 			}
 
 			@Override
@@ -619,138 +645,21 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 				new ImageIcon(getClass().getClassLoader().getResource("res/pan_pointer.png")).getImage(),
 				new Point(0, 0), "pan");
 
-		loadingDialog = new JDialog(frame, "Please Wait...", true);
-		JPanel loadingDialogPanel = new JPanel();
-		JLabel loadingDialogLabel = new JLabel("Loading...",
-				new ImageIcon(getClass().getClassLoader().getResource("res/launch.gif")), JLabel.CENTER);
+		loadingDialog = new LoadingDialog(frame, "Please Wait...", "Loading...",
+				new ImageIcon(getClass().getClassLoader().getResource("res/launch.gif")),
+				new ImageIcon(getClass().getClassLoader().getResource("res/loading_ico.png")));
 
-		loadingDialogPanel.setBackground(Shared.UI_COLOR);
-		loadingDialogPanel.setBorder(new EmptyBorder(20, 5, 20, 20));
-		loadingDialogLabel.setFont(Shared.UI_FONT);
-		loadingDialogLabel.setForeground(Color.WHITE);
-		loadingDialog.setBackground(Shared.UI_COLOR);
-		loadingDialog.setDefaultCloseOperation(JDialog.DO_NOTHING_ON_CLOSE);
-		loadingDialog
-				.setIconImage(new ImageIcon(getClass().getClassLoader().getResource("res/loading_ico.png")).getImage());
-		loadingDialogPanel.add(loadingDialogLabel);
-		loadingDialog.add(loadingDialogPanel);
-		loadingDialog.pack();
-		loadingDialog.setLocationRelativeTo(frame);
-		loadingDialog.setResizable(false);
+		informationDialog = new InformationDialog(frame, "Information", "res/info.html",
+				new ImageIcon(getClass().getClassLoader().getResource("res/main_ico.png")));
 
-		informationDialog = new JDialog(frame, "Information", true);
-		informationDialog.setSize(600, 600);
-		informationDialog.setResizable(false);
-		informationDialog.setLocationRelativeTo(frame);
-		informationDialog
-				.setIconImage(new ImageIcon(getClass().getClassLoader().getResource("res/main_ico.png")).getImage());
-		informationDialog.addWindowListener(new WindowAdapter() {
-			@Override
-			public void windowClosing(WindowEvent evt) {
-				runOnNewThread(dismissInformationDialog);
-			}
-		});
+		invalidExtensionDialog = new CustomJDialog(frame, "Invalid File Type", "File must be of extension *.nc", "Ok",
+				dismissInvalidExtensionDialog, new ImageIcon(getClass().getClassLoader().getResource("res/error_dark.png")));
 
-		try {
-			BufferedReader infoHtmlReader = new BufferedReader(
-					new InputStreamReader(getClass().getClassLoader().getResourceAsStream("res/info.html"), "UTF-8"));
+		parseErrorDialog = new CustomJDialog(frame, "Error", "Error loading file. See log for more details.", "Ok",
+				dismissParseErrorDialog, new ImageIcon(getClass().getClassLoader().getResource("res/error_dark.png")));
 
-			infoHtmlReader.mark(1);
-			if (infoHtmlReader.read() != 0xFEFF)
-				infoHtmlReader.reset();
-			else
-				Logger.debug("Removed byte order mark from filestream");
-
-			StringBuffer infoHtml = new StringBuffer();
-			String currentLine;
-
-			while ((currentLine = infoHtmlReader.readLine()) != null) {
-				infoHtml.append(currentLine);
-			}
-
-			infoHtmlReader.close();
-
-			JEditorPane infoPane = new JEditorPane("text/html", infoHtml.toString());
-			infoPane.setSize(600, 600);
-			BufferedImage infoImg = GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice()
-					.getDefaultConfiguration().createCompatibleImage(600, 600);
-			infoPane.print(infoImg.getGraphics());
-
-			@SuppressWarnings("serial")
-			JPanel infoJPanel = new JPanel() {
-				@Override
-				protected void paintComponent(Graphics g) {
-					super.paintComponent(g);
-					g.drawImage(infoImg, 0, 0, null);
-				}
-			};
-
-			informationDialog.add(infoJPanel);
-
-			Logger.debug("Loaded information html");
-		} catch (Exception e) {
-			Logger.error("Error loading information html: {}", e);
-			System.exit(-1);
-		}
-
-		invalidExtensionDialog = new JDialog(frame, "Invalid File Type", true);
-		JPanel extensionErrorDialogMessagePane = new JPanel();
-		JPanel extensionErrorDialogButtonPane = new JPanel();
-		JLabel extensionErrorMessageLabel = new JLabel("File must be of extension *.nc", JLabel.CENTER);
-
-		CustomJButton extensionErrorDialogButton = new CustomJButton("Ok");
-		extensionErrorDialogButton.setFocusPainted(false);
-		extensionErrorDialogButton.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				invalidExtensionDialog.setVisible(false);
-			}
-		});
-
-		extensionErrorMessageLabel.setForeground(Color.WHITE);
-		extensionErrorMessageLabel.setFont(Shared.UI_FONT);
-		extensionErrorDialogMessagePane.add(extensionErrorMessageLabel);
-		extensionErrorDialogMessagePane.setBackground(Shared.UI_COLOR);
-		extensionErrorDialogMessagePane.setBorder(new EmptyBorder(5, 20, 0, 20));
-		extensionErrorDialogButtonPane.add(extensionErrorDialogButton);
-		extensionErrorDialogButtonPane.setBackground(Shared.UI_COLOR);
-
-		invalidExtensionDialog.add(extensionErrorDialogMessagePane);
-		invalidExtensionDialog.add(extensionErrorDialogButtonPane, BorderLayout.SOUTH);
-		invalidExtensionDialog
-				.setIconImage(new ImageIcon(getClass().getClassLoader().getResource("res/error_dark.png")).getImage());
-		invalidExtensionDialog.setResizable(false);
-		invalidExtensionDialog.pack();
-		invalidExtensionDialog.setLocationRelativeTo(frame);
-
-		parseErrorDialog = new JDialog(frame, "Error", true);
-		JPanel parseErrorDialogMessagePane = new JPanel();
-		JPanel parseErrorDialogButtonPane = new JPanel();
-		JLabel parseErrorMessageLabel = new JLabel("Error loading file. See log for more details.", JLabel.CENTER);
-		CustomJButton parseErrorDialogButton = new CustomJButton("Ok");
-		parseErrorDialogButton.setFocusPainted(false);
-		parseErrorDialogButton.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				parseErrorDialog.setVisible(false);
-			}
-		});
-
-		parseErrorMessageLabel.setForeground(Color.WHITE);
-		parseErrorMessageLabel.setFont(Shared.UI_FONT);
-		parseErrorDialogMessagePane.add(parseErrorMessageLabel);
-		parseErrorDialogMessagePane.setBackground(Shared.UI_COLOR);
-		parseErrorDialogMessagePane.setBorder(new EmptyBorder(5, 20, 0, 20));
-		parseErrorDialogButtonPane.add(parseErrorDialogButton);
-		parseErrorDialogButtonPane.setBackground(Shared.UI_COLOR);
-
-		parseErrorDialog.add(parseErrorDialogMessagePane);
-		parseErrorDialog.add(parseErrorDialogButtonPane, BorderLayout.SOUTH);
-		parseErrorDialog
-				.setIconImage(new ImageIcon(getClass().getClassLoader().getResource("res/error_dark.png")).getImage());
-		parseErrorDialog.setResizable(false);
-		parseErrorDialog.pack();
-		parseErrorDialog.setLocationRelativeTo(frame);
+		crashDialog = new CustomJDialog(frame, "Fatal Error", "GCI has crashed", "Exit",
+				dismissCrashDialog, new ImageIcon(getClass().getClassLoader().getResource("res/error_dark.png")));
 
 		menuBar = new MenuBar();
 		Menu file = new Menu("File");
@@ -758,7 +667,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		exitMenuItem.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
-				exit();
+				exit(0);
 			}
 		});
 
@@ -773,8 +682,8 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 				JFileChooser fileChooser = new JFileChooser();
 				fileChooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
 
-				if (!RenderUI.this.currentFilePath.equals("")) {
-					fileChooser.setCurrentDirectory(new File(RenderUI.this.currentFilePath).getParentFile());
+				if (!currentFilePath.equals("")) {
+					fileChooser.setCurrentDirectory(new File(currentFilePath).getParentFile());
 					Logger.debug("Set file chooser to last directory location");
 				}
 
@@ -817,7 +726,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		window.add(resetLayoutItem);
 
 		Menu about = new Menu("About");
-		MenuItem sourceMenuItem = new MenuItem("Source Code");
+		MenuItem sourceMenuItem = new MenuItem("Source");
 		sourceMenuItem.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
@@ -841,8 +750,8 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 			}
 		});
 
-		about.add(sourceMenuItem);
 		about.add(infoMenuItem);
+		about.add(sourceMenuItem);
 
 		menuBar.add(file);
 		menuBar.add(window);
@@ -889,9 +798,9 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		g.gridx = g.gridy = 0;
 		g.gridwidth = g.gridheight = 1;
 		g.fill = GridBagConstraints.BOTH;
-		g.anchor = GridBagConstraints.NORTH;
+		g.anchor = GridBagConstraints.NORTHWEST;
 		g.weightx = 100;
-		g.weighty = 70;
+		g.weighty = 55;
 		detailsFrame.add(logScroller, g);
 
 		MenuBar logMenuBar = new MenuBar();
@@ -982,7 +891,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		toolsPopupMenu.add(selectAllItem);
 		logTextArea.setComponentPopupMenu(toolsPopupMenu);
 
-		JPanel detailsPanel = new JPanel(new GridLayout(5, 2));
+		JPanel detailsPanel = new JPanel(new GridLayout(4, 2));
 		detailsPanel.setSize(500, 400);
 		detailsPanel.setMaximumSize(new Dimension(500, 400));
 		detailsPanel.setBackground(Shared.UI_COLOR);
@@ -1030,13 +939,21 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		detailsPanel.add(currentSpindleSpeedText);
 		detailsPanel.add(measurementModeTextTitle);
 		detailsPanel.add(measurementModeText);
-		detailsPanel.add(boundsTextTitle);
-		detailsPanel.add(boundsTextScroller);
+
+		JPanel boundsPanel = new JPanel(new GridLayout(1, 0));
+		boundsPanel.add(boundsTextTitle);
+		boundsPanel.add(boundsTextScroller);
 
 		g.gridy = 1;
 		g.weighty = 30;
-		g.anchor = GridBagConstraints.SOUTH;
+		g.anchor = GridBagConstraints.NORTHWEST;
 		detailsFrame.add(detailsPanel, g);
+
+		g.gridy = 2;
+		g.weighty = 15;
+		g.weightx = 50;
+		g.anchor = GridBagConstraints.NORTHWEST;
+		detailsFrame.add(boundsPanel, g);
 
 		controlFrame = new JFrame("Controls");
 		controlFrame.setSize(400, 800);
@@ -1063,7 +980,6 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 
 		JPanel controlPanel = new JPanel(new GridLayout(10, 0));
 		playButton = new CustomJButton("Play");
-		playButton.setFont(Shared.UI_FONT);
 		playButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
@@ -1151,7 +1067,6 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		genPanel.add(generationMultiplierSlider, BorderLayout.CENTER);
 
 		CustomJButton defButton = new CustomJButton("Default View");
-		defButton.setFont(Shared.UI_FONT);
 		defButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent arg0) {
@@ -1161,7 +1076,6 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		});
 
 		CustomJButton isoButton = new CustomJButton("Isometric View");
-		isoButton.setFont(Shared.UI_FONT);
 		isoButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent arg0) {
@@ -1170,8 +1084,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 			}
 		});
 
-		CustomJButton screenshotButton = new CustomJButton("Screenshot (File)");
-		screenshotButton.setFont(Shared.UI_FONT);
+		screenshotButton = new CustomJButton("Screenshot (Clipboard)");
 		screenshotButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
@@ -1179,33 +1092,24 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 			}
 		});
 
-		CustomJButton switchScreenshotModeButton = new CustomJButton("Switch Screenshot Mode");
-		switchScreenshotModeButton.setFont(Shared.UI_FONT);
-		switchScreenshotModeButton.addActionListener(new ActionListener() {
+		toggleBoundingBoxButton = new CustomJButton("Display Bounding Box");
+		toggleBoundingBoxButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
-				if (RenderUI.this.screenshotToClipboard) {
-					screenshotButton.setText("Screenshot (File)");
-					RenderUI.this.screenshotToClipboard = false;
-				} else {
-					screenshotButton.setText("Screenshot (Clipboard)");
-					RenderUI.this.screenshotToClipboard = true;
-				}
+				toggleBoundingBox();
 			}
 		});
 
 		CustomJButton reloadFileButton = new CustomJButton("Reload");
-		reloadFileButton.setFont(Shared.UI_FONT);
 		reloadFileButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
 				Logger.debug("Reloading file");
-				checkAndLoadFile(new File(RenderUI.this.currentFilePath));
+				checkAndLoadFile(new File(currentFilePath));
 			}
 		});
 
 		CustomJButton clearButton = new CustomJButton("Clear");
-		clearButton.setFont(Shared.UI_FONT);
 		clearButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
@@ -1239,8 +1143,8 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		controlPanel.add(timePanel);
 		controlPanel.add(defButton);
 		controlPanel.add(isoButton);
+		controlPanel.add(toggleBoundingBoxButton);
 		controlPanel.add(screenshotButton);
-		controlPanel.add(switchScreenshotModeButton);
 		controlPanel.add(reloadFileButton);
 		controlPanel.add(clearButton);
 		controlPanel.add(scalePanel);
@@ -1276,6 +1180,27 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	private void unlockScaleAndGenSliders() {
 		scaleSlider.setEnabled(true);
 		generationMultiplierSlider.setEnabled(true);
+		Logger.info("Unlocked sliders, reload after changing values");
+	}
+
+	private void switchScreenShotMode() {
+		if (screenshotToClipboard) {
+			screenshotButton.setText("Screenshot (File)");
+			screenshotToClipboard = false;
+		} else {
+			screenshotButton.setText("Screenshot (Clipboard)");
+			screenshotToClipboard = true;
+		}
+	}
+
+	private void toggleBoundingBox() {
+		if (displayBoundingBox) {
+			toggleBoundingBoxButton.setText("Display Bounding Box");
+			displayBoundingBox = false;
+		} else {
+			toggleBoundingBoxButton.setText("Hide Bounding Box");
+			displayBoundingBox = true;
+		}
 	}
 
 	@Override
@@ -1296,12 +1221,20 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		}
 
 		if (glLock.tryLock()) {
-			int loop = this.loopNum;
-			for (int i = 0; i < loop; i++) {
-				Color c = this.curLineColor.get(i);
-				RenderHelpers.renderLine(gl, c, this.vertexValues.get(i)[0], this.vertexValues.get(i)[1], 2.5f);
+			
+			try {
+				int loop = this.loopNum;
+				for (int i = 0; i < loop; i++) {
+					RenderHelpers.renderLine(gl, this.curLineColor.get(i), this.vertexValues.get(i)[0],
+							this.vertexValues.get(i)[1], 2.5f);
+				}
+			} catch (Exception e) {
+				Logger.error("Fatal Error: {}", e);
+				animator.stop();
+				runOnNewThread(showCrashDialog);
+				return;
 			}
-
+			
 			if (this.boundsExist && this.displayBoundingBox) {
 				RenderHelpers.renderLine(gl, Color.YELLOW, new float[] { minX, minZ, -minY },
 						new float[] { maxX, minZ, -minY }, 4.5f);
@@ -1404,7 +1337,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		gl.glLoadIdentity();
 	}
 
-	public void setCamera(GL2 gl, GLU glu) {
+	private void setCamera(GL2 gl, GLU glu) {
 		gl.glMatrixMode(GL2.GL_PROJECTION);
 		gl.glLoadIdentity();
 
@@ -1416,7 +1349,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		gl.glLoadIdentity();
 	}
 
-	public void runOnNewThread(Runnable r) {
+	private void runOnNewThread(Runnable r) {
 		new Thread() {
 			@Override
 			public void run() {
@@ -1425,7 +1358,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		}.start();
 	}
 
-	public void checkAndLoadFile(File file) {
+	private void checkAndLoadFile(File file) {
 		String fileExtension = "";
 		String filePath = file.getAbsolutePath();
 		int extensionIndex = filePath.lastIndexOf(".");
@@ -1443,7 +1376,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		}
 	}
 
-	public void exit() {
+	private void exit(int statusCode) {
 		Logger.debug("Window closing...");
 
 		if (animator != null)
@@ -1453,10 +1386,10 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		frame.dispose();
 		detailsFrame.dispose();
 		controlFrame.dispose();
-		System.exit(0);
+		System.exit(statusCode);
 	}
 
-	public void resetCamera() {
+	private void resetCamera() {
 		this.zoomDistance = 80f;
 		this.curAngleX = 0f;
 		this.curAngleY = 90f;
@@ -1464,7 +1397,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		this.curY = 1240f;
 	}
 
-	public void setCameraToIsometric() {
+	private void setCameraToIsometric() {
 		this.zoomDistance = 80f;
 		this.curAngleX = -10f;
 		this.curAngleY = 40f;
@@ -1472,7 +1405,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		this.curY = 1810f;
 	}
 
-	public void resetWindowLayout() {
+	private void resetWindowLayout() {
 		frame.setSize(800, 800);
 		frame.setLocationRelativeTo(null);
 		detailsFrame.setSize(400, 800);
@@ -1481,7 +1414,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		controlFrame.setLocation((int) frame.getLocation().getX() - 400, (int) frame.getLocation().getY());
 	}
 
-	public void setFullscreenWindowLayout() {
+	private void setFullscreenWindowLayout() {
 		Rectangle screenSize = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
 		int width = (int) screenSize.getWidth();
 		int height = (int) screenSize.getHeight();
@@ -1495,20 +1428,26 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		detailsFrame.setLocation(qWidth * 3, 0);
 	}
 
-	public double getDecreaseSensitivityMultiplier() {
+	private double getDecreaseSensitivityMultiplier() {
 		return ((decreaseSensitivity) ? Shared.DECREASE_SENSITIVITY_MULTIPLIER : 1);
 	}
 
-	public void takeScreenshot() {
+	private void takeScreenshot() {
 		this.takeScreenshot = true;
 	}
 
-	public void reloadDebug() {
+	private void reloadDebug() {
 		if (Shared.DEBUG_MODE) {
 			logTextArea.setText("");
 			Shared.SEGMENT_SCALE_MULTIPLIER = (int) (30 * (Math.random() + 0.4));
 			checkAndLoadFile(new File(currentFilePath));
 		}
+	}
+	
+	private void crashDebug() {
+		Logger.debug("Crashing gl event loop...");
+		animateVertexValues.interrupt();
+		loopNum = Integer.MAX_VALUE;
 	}
 
 	@Override
@@ -1607,6 +1546,9 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 
 	@Override
 	public void keyPressed(KeyEvent e) {
+
+		Logger.debug("Key pressed: {}", e.getKeyChar());
+
 		if (!lockHorizAxis && e.getKeyCode() == KeyEvent.VK_Z) {
 			lockHorizAxis = true;
 		} else if (!lockVertAxis && e.getKeyCode() == KeyEvent.VK_X && !lockHorizAxis) {
@@ -1617,19 +1559,13 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 			resetCamera();
 		} else if (e.getKeyCode() == KeyEvent.VK_B) {
 			setCameraToIsometric();
-		} else if (e.getKeyCode() == KeyEvent.VK_N) {
-			this.screenshotToClipboard = !this.screenshotToClipboard;
-			Logger.debug("Screenshot to clipboard: {}", this.screenshotToClipboard);
-		} else if (e.getKeyCode() == KeyEvent.VK_M) {
-			takeScreenshot();
 		} else if (e.getKeyCode() == KeyEvent.VK_L) {
 			unlockScaleAndGenSliders();
-			Logger.info("Unlocked sliders, reload after changing values");
 		} else if (e.getKeyCode() == KeyEvent.VK_O) {
 			reloadDebug();
 		} else if (e.getKeyCode() == KeyEvent.VK_Q) {
-			this.displayBoundingBox = !this.displayBoundingBox;
-			Logger.debug("bounding box state: {}", this.displayBoundingBox);
+			toggleBoundingBox();
+			Logger.debug("Bounding box state: {}", displayBoundingBox);
 		} else if (e.getKeyCode() == KeyEvent.VK_SPACE) {
 			if (this.isPlaying)
 				stopPlayback();
@@ -1639,6 +1575,10 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 			this.displayAxis = !this.displayAxis;
 		} else if (e.getKeyCode() == KeyEvent.VK_E) {
 			this.displayAxisLabels = !this.displayAxisLabels;
+		} else if (e.getKeyCode() == KeyEvent.VK_T) {
+			switchScreenShotMode();
+		} else if (e.getKeyCode() == KeyEvent.VK_Y && Shared.DEBUG_MODE) {
+			crashDebug();
 		} else {
 			return;
 		}

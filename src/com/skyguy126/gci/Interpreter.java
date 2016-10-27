@@ -206,6 +206,8 @@ public class Interpreter {
 			case "G3":
 				Logger.debug("Arc interpolation");
 				
+				// I and J values are ALWAYS relative
+				
 				lastI += lastX;
 				lastJ += lastY;
 				

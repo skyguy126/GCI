@@ -12,8 +12,9 @@ public class CustomJButton extends JButton {
 	public CustomJButton(String title) {
 		super(title);
 		setContentAreaFilled(false);
-		super.setForeground(Color.WHITE);
-		super.setFocusPainted(false);
+		setForeground(Color.WHITE);
+		setFocusPainted(false);
+		setFont(Shared.UI_FONT);
 	}
 
 	@Override
