@@ -348,7 +348,7 @@ public class Interpreter {
 	public ArrayList<Color> getCurrentLineColor() {
 		return currentLineColor;
 	}
-	
+
 	public int getTotalTicks() {
 		return totalTicks;
 	}
