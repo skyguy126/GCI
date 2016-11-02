@@ -13,8 +13,8 @@ def main():
     try:
         file_input = open(file_name, 'r')
         file_output = open(file_conv_name, 'w')
-    except:
-        print "file error"
+    except Exception as e:
+        print "file error: " + str(e)
         return -1
 
     print "Converting " + file_name + " ..."
