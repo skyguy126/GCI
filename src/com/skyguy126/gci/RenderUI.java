@@ -299,13 +299,13 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 						stopPlayback();
 					}
 				}
-
-				if (currentTimePercent <= 0.001f && currentTimeScale.size() > 0)
-					timeScale = (long) currentTimeScale.get(0);
-				else if (currentTimePercent > 0.001f && currentTimeScale.size() > 0)
-					timeScale = (long) currentTimeScale.get((int) (currentTimePercent * currentTimeScale.size()) - 1);
+				
+				int position = (int) (currentTimePercent * currentTimeScale.size()) - 1;
+				
+				if (position <= 0) 
+					timeScale = 1L;
 				else
-					timeScale = 1;
+					timeScale = (long) currentTimeScale.get(position);
 
 				try {
 					Thread.sleep(Shared.TIME_SCALE / timeScale);
