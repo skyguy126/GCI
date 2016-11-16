@@ -1359,6 +1359,12 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	}
 
 	private void checkAndLoadFile(File file) {
+		
+		if (!file.exists()) {
+			Logger.error("No such file exists");
+			return;
+		}
+		
 		String fileExtension = "";
 		String filePath = file.getAbsolutePath();
 		int extensionIndex = filePath.lastIndexOf(".");
