@@ -92,30 +92,30 @@ public class Interpreter {
 
 			// Parse all arguments in current line
 			for (int x = 0; x < gCodeArray.get(i).size(); x++) {
-				String curArg = gCodeArray.get(i).get(x);
-				Logger.debug("Current code block: {}", curArg);
+				String curBlock = gCodeArray.get(i).get(x);
+				Logger.debug("Current code block: {}", curBlock);
 
-				if (curArg.startsWith("X"))
-					curX = Float.parseFloat(curArg.substring(1)) * Shared.SEGMENT_SCALE_MULTIPLIER;
-				else if (curArg.startsWith("Y"))
-					curY = Float.parseFloat(curArg.substring(1)) * Shared.SEGMENT_SCALE_MULTIPLIER;
-				else if (curArg.startsWith("Z"))
-					curZ = Float.parseFloat(curArg.substring(1)) * Shared.SEGMENT_SCALE_MULTIPLIER;
-				else if (curArg.startsWith("I"))
-					lastI = Float.parseFloat(curArg.substring(1)) * Shared.SEGMENT_SCALE_MULTIPLIER;
-				else if (curArg.startsWith("J"))
-					lastJ = Float.parseFloat(curArg.substring(1)) * Shared.SEGMENT_SCALE_MULTIPLIER;
-				else if (curArg.startsWith("F")) {
-					curFeedRateText = curArg.substring(1);
+				if (curBlock.startsWith("X"))
+					curX = Float.parseFloat(curBlock.substring(1)) * Shared.SEGMENT_SCALE_MULTIPLIER;
+				else if (curBlock.startsWith("Y"))
+					curY = Float.parseFloat(curBlock.substring(1)) * Shared.SEGMENT_SCALE_MULTIPLIER;
+				else if (curBlock.startsWith("Z"))
+					curZ = Float.parseFloat(curBlock.substring(1)) * Shared.SEGMENT_SCALE_MULTIPLIER;
+				else if (curBlock.startsWith("I"))
+					lastI = Float.parseFloat(curBlock.substring(1)) * Shared.SEGMENT_SCALE_MULTIPLIER;
+				else if (curBlock.startsWith("J"))
+					lastJ = Float.parseFloat(curBlock.substring(1)) * Shared.SEGMENT_SCALE_MULTIPLIER;
+				else if (curBlock.startsWith("F")) {
+					curFeedRateText = curBlock.substring(1);
 					curFeedRate = Float.parseFloat(curFeedRateText);
-				} else if (curArg.startsWith("S")) {
-					curSpindleSpeedText = curArg.substring(1);
+				} else if (curBlock.startsWith("S")) {
+					curSpindleSpeedText = curBlock.substring(1);
+				} else if (curBlock.startsWith("G") || curBlock.startsWith("M")) {
+					curCmd = curBlock;
 				}
 			}
-
-			curCmd = gCodeArray.get(i).get(0);
-
-			if (!(curCmd.startsWith("G") || curCmd.startsWith("M")))
+			
+			if (curCmd.equals(""))
 				continue;
 
 			Logger.debug("Current command: {}", curCmd);

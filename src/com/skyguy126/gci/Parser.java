@@ -79,10 +79,6 @@ public class Parser {
 				// Initialize array for loop
 				ArrayList<String> cmdList = new ArrayList<String>();
 
-				// Boolean operations are faster than string comparisons so we
-				// use short circuit evaluation
-				boolean lastCmdExists = false;
-
 				// we cannot use valid for this because even if we find an error
 				// we want to check the rest of the file
 				boolean loopExit = false;
@@ -95,7 +91,6 @@ public class Parser {
 				boolean jExists = false;
 
 				// Keep track of commands that need arguments
-				String lastCmd = "";
 				String lastNTag = "";
 
 				// Keep track of the command block number
@@ -103,7 +98,6 @@ public class Parser {
 
 				String[] currentLineArray = currentLine.replaceAll("\n", "").replaceAll("\\s+", " ").split(" ");
 				int currentLineSize = currentLineArray.length;
-				int remainingArgs = currentLineSize - 1;
 
 				Logger.debug("Entering loop for line {}, arg size: {}", lineNum, currentLineSize);
 
@@ -114,14 +108,14 @@ public class Parser {
 					cmdNum++;
 
 					// Assert N tag at start of line
-					if (cmdNum == 0 && !Pattern.compile("[N]\\d+").matcher(x).matches()) {
+					if (Shared.VALIDATE_N_TAG && cmdNum == 0 && !Pattern.compile("[N]\\d+").matcher(x).matches()) {
 						Logger.error("Invalid N tag at line {}", lineNum);
 						valid = false;
 						break;
 					}
 
 					// No need to process the N tag, ignoring that anyways
-					if (cmdNum == 0) {
+					if (Shared.VALIDATE_N_TAG && cmdNum == 0) {
 						lastNTag = x;
 
 						if (currentLineSize == 1) {
@@ -130,89 +124,66 @@ public class Parser {
 						}
 
 						continue;
-					} else {
-						remainingArgs--;
 					}
 
-					// Last command was M03 to start spindle and we need to get
-					// spindle speed
-					if (lastCmdExists && lastCmd.equals("M3")) {
-						if (Pattern.compile("[S]\\d+").matcher(x).matches()) {
-							Logger.debug("Detected S value: {}", x);
-							cmdList.add(x);
-							lastCmdExists = false;
-							lastCmd = "";
-							continue;
+					if (Pattern.compile("[S]\\d+").matcher(x).matches()) {
+						Logger.debug("Detected S value: {}", x);
+						cmdList.add(x);
+						continue;
+					}
+
+					// Search for X Y Z and F tags following G00 and G01
+
+					if (Pattern.compile("[XYZ]([-])?((\\d+\\.\\d+)|(\\d+)|(\\.\\d+))").matcher(x).matches()) {
+
+						Logger.debug("Detected coordinate value: {}", x);
+
+						// Make sure coordinate can only be defined once on
+						// one line
+						if (!xExists && x.startsWith("X")) {
+							xExists = true;
+						} else if (!yExists && x.startsWith("Y")) {
+							yExists = true;
+						} else if (!zExists && x.startsWith("Z")) {
+							zExists = true;
 						} else {
-							Logger.error("M03 must be followed by S tag indicating spindle speed on line {} ({})",
-									lineNum, lastNTag);
+							Logger.error("X Y or Z can only be defined once on line {} ({})", lineNum, lastNTag);
 							valid = false;
 							break;
 						}
-					}
 
-					if (lastCmdExists && (lastCmd.equals("G0") || lastCmd.equals("G1") || lastCmd.equals("G2")
-							|| lastCmd.equals("G3"))) {
+						cmdList.add(x);
+						continue;
 
-						// Search for X Y Z and F tags following G00 and G01
+					} else if (Pattern.compile("[IJ]([-])?((\\d+\\.\\d+)|(\\d+)|(\\.\\d+))").matcher(x).matches()) {
 
-						if (Pattern.compile("[XYZ]([-])?((\\d+\\.\\d+)|(\\d+)|(\\.\\d+))").matcher(x).matches()) {
+						Logger.debug("Detected coordinate value for arc: {}", x);
 
-							Logger.debug("Detected coordinate value: {}", x);
-
-							// Make sure coordinate can only be defined once on
-							// one line
-							if (!xExists && x.startsWith("X")) {
-								xExists = true;
-							} else if (!yExists && x.startsWith("Y")) {
-								yExists = true;
-							} else if (!zExists && x.startsWith("Z")) {
-								zExists = true;
-							} else {
-								Logger.error("X Y or Z can only be defined once on line {} ({})", lineNum, lastNTag);
-								valid = false;
-								break;
-							}
-
-							cmdList.add(x);
-							continue;
-
-						} else if (Pattern.compile("[IJ]([-])?((\\d+\\.\\d+)|(\\d+)|(\\.\\d+))").matcher(x).matches()) {
-
-							Logger.debug("Detected coordinate value for arc: {}", x);
-
-							if (!iExists && x.startsWith("I")) {
-								iExists = true;
-							} else if (!jExists && x.startsWith("J")) {
-								jExists = true;
-							} else {
-								Logger.error("I or J can only be defined once on line {} ({})", lineNum, lastNTag);
-								valid = false;
-								break;
-							}
-
-							cmdList.add(x);
-							continue;
-
-						} else if (Pattern.compile("[F]((\\d+\\.\\d+)|(\\d+)|(\\.\\d+))").matcher(x).matches()) {
-
-							Logger.debug("Detected F value: {}", x);
-							cmdList.add(x);
-							continue;
-
-						} else if (Pattern.compile("[S]\\d+").matcher(x).matches()) {
-
-							Logger.debug("Detected S value: {}", x);
-							cmdList.add(x);
-							continue;
-
+						if (!iExists && x.startsWith("I")) {
+							iExists = true;
+						} else if (!jExists && x.startsWith("J")) {
+							jExists = true;
 						} else {
-
-							Logger.error("Syntax error on line {} ({})", lineNum, lastNTag);
+							Logger.error("I or J can only be defined once on line {} ({})", lineNum, lastNTag);
 							valid = false;
 							break;
-
 						}
+
+						cmdList.add(x);
+						continue;
+
+					} else if (Pattern.compile("[F]((\\d+\\.\\d+)|(\\d+)|(\\.\\d+))").matcher(x).matches()) {
+
+						Logger.debug("Detected F value: {}", x);
+						cmdList.add(x);
+						continue;
+
+					} else if (Pattern.compile("[S]\\d+").matcher(x).matches()) {
+
+						Logger.debug("Detected S value: {}", x);
+						cmdList.add(x);
+						continue;
+
 					}
 
 					if (Pattern.compile("[GMT]\\d+").matcher(x).matches()) {
@@ -292,8 +263,6 @@ public class Parser {
 						case "G2":
 						case "G3":
 							cmdList.add(gCode);
-							lastCmdExists = true;
-							lastCmd = gCode;
 							break;
 						default:
 							Logger.error("Invalid code on line {} block {} ({})", lineNum, cmdNum, lastNTag);
@@ -319,23 +288,6 @@ public class Parser {
 						break;
 					}
 
-				}
-
-				// Make sure required arguments exists for g0/g1/g2/g3
-				if (lastCmdExists && (lastCmd.equals("G0") || lastCmd.equals("G1") || lastCmd.equals("G2")
-						|| lastCmd.equals("G3"))) {
-					if (!(xExists || yExists || zExists || iExists || jExists)) {
-						Logger.error("{} must be supplied with X/Y/Z/I/J tag on line {} ({})", lastCmd, lineNum,
-								lastNTag);
-						valid = false;
-					}
-				}
-
-				// Check if M03 has spindle speed following it
-				if (lastCmdExists && lastCmd.equals("M3") && remainingArgs == 0) {
-					Logger.error("M03 must be followed by S tag indicating spindle speed on line {} ({})", lineNum,
-							lastNTag);
-					valid = false;
 				}
 
 				// Add current line to main gcode array if command is valid

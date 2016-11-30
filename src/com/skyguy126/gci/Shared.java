@@ -6,13 +6,14 @@ import java.awt.Font;
 import org.pmw.tinylog.Level;
 
 public class Shared {
-	public static final String VERSION = "v0.7a";
+	public static final String VERSION = "v0.8a";
 	public static final String SOURCE_CODE_URL = "https://github.com/skyguy126/GCI";
 
-	public static final boolean DEBUG_MODE = false;
+	public static final boolean DEBUG_MODE = true;
 	public static final boolean VSYNC = true;
 	public static final boolean USE_SYSTEM_LOOK_AND_FEEL = false;
 	public static final boolean ENABLE_ANTIALIAS = true;
+	public static volatile boolean VALIDATE_N_TAG = true;
 
 	public static final double PAN_SENSITIVITY_MULTIPLIER = 10.0;
 	public static final double ZOOM_SENSITIVITY_MULTIPLIER = 10.0;
