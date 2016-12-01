@@ -91,7 +91,7 @@ public class Parser {
 				boolean jExists = false;
 
 				// Keep track of commands that need arguments
-				String lastNTag = "";
+				String lastNTag = (Shared.VALIDATE_N_TAG) ? "" : "N/A";
 
 				// Keep track of the command block number
 				int cmdNum = -1;
@@ -108,22 +108,20 @@ public class Parser {
 					cmdNum++;
 
 					// Assert N tag at start of line
-					if (Shared.VALIDATE_N_TAG && cmdNum == 0 && !Pattern.compile("[N]\\d+").matcher(x).matches()) {
-						Logger.error("Invalid N tag at line {}", lineNum);
-						valid = false;
-						break;
-					}
+					if (cmdNum == 0) {
+						boolean validNTag = Pattern.compile("[N]\\d+").matcher(x).matches();
 
-					// No need to process the N tag, ignoring that anyways
-					if (Shared.VALIDATE_N_TAG && cmdNum == 0) {
-						lastNTag = x;
-
-						if (currentLineSize == 1) {
+						if (Shared.VALIDATE_N_TAG && !validNTag) {
+							Logger.error("Invalid N tag at line {}", lineNum);
+							valid = false;
+							break;
+						} else if (Shared.VALIDATE_N_TAG && validNTag && currentLineSize == 1) {
 							Logger.warn("Empty statement at line {} ({})", lineNum, lastNTag);
 							break;
+						} else if (validNTag) {
+							lastNTag = x;
+							continue;
 						}
-
-						continue;
 					}
 
 					if (Pattern.compile("[S]\\d+").matcher(x).matches()) {
@@ -132,7 +130,7 @@ public class Parser {
 						continue;
 					}
 
-					// Search for X Y Z and F tags following G00 and G01
+					// Search for X Y Z and F tags following G0 and G1
 
 					if (Pattern.compile("[XYZ]([-])?((\\d+\\.\\d+)|(\\d+)|(\\.\\d+))").matcher(x).matches()) {
 

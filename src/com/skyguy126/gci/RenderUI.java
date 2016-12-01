@@ -363,11 +363,11 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 					totalTicks = interpreter.getTotalTicks();
 					loopNum = (int) (totalTicks * currentTimePercent);
 
-					if (parser.getMeasurementMode() == MeasurementMode.INCH) {
+					if (parser.getMeasurementMode() == MeasurementMode.INCH)
 						measurementModeText.setText("INCH");
-					} else if (parser.getMeasurementMode() == MeasurementMode.MILLIMETER) {
+					else if (parser.getMeasurementMode() == MeasurementMode.MILLIMETER)
 						measurementModeText.setText("MM");
-					}
+					
 
 					minX = interpreter.getBounds()[0];
 					maxX = interpreter.getBounds()[1];
@@ -414,6 +414,8 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 
 					glLock.unlock();
 					animateLock.unlock();
+				} else {
+					Logger.error("Segment generation failed due to an internal error");
 				}
 			}
 
@@ -698,8 +700,18 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 				}
 			}
 		});
+		
+		MenuItem toggleNTagValidation = new MenuItem("Validate N Tag");
+		toggleNTagValidation.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				Shared.VALIDATE_N_TAG = !Shared.VALIDATE_N_TAG;
+				toggleNTagValidation.setLabel((Shared.VALIDATE_N_TAG) ? "Ignore N Tag" : "Validate N Tag");
+			}
+		});
 
 		file.add(openMenuItem);
+		file.add(toggleNTagValidation);
 		file.addSeparator();
 		file.add(exitMenuItem);
 

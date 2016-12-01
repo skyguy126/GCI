@@ -28,9 +28,9 @@ public class Interpreter {
 	private float maxY;
 	private float minX;
 	private float maxX;
-	
+
 	private boolean rampFlag;
-	
+
 	private int totalTicks;
 
 	public Interpreter(ArrayList<ArrayList<String>> g) {
@@ -47,7 +47,7 @@ public class Interpreter {
 		this.startX = 0;
 		this.startY = 0;
 		this.startZ = 0;
-		
+
 		this.totalTicks = 0;
 
 		this.minX = 0f;
@@ -56,7 +56,7 @@ public class Interpreter {
 		this.maxY = 0f;
 		this.minZ = 0f;
 		this.maxZ = 0f;
-		
+
 		this.rampFlag = false;
 	}
 
@@ -88,12 +88,21 @@ public class Interpreter {
 
 		float curFeedRate = 10f;
 
+		// declare this outside loop so we can modify for interpretation
+		int parseLoopCounter = 0;
+
+		// always reset parse loop unless there is a command found mid-line
+		boolean resetParseLoopCounter = true;
+		boolean midLineCmdExists = false;
+
 		for (int i = 0; i < gCodeArray.size(); i++) {
 
 			// Parse all arguments in current line
-			for (int x = 0; x < gCodeArray.get(i).size(); x++) {
-				String curBlock = gCodeArray.get(i).get(x);
+			for (; parseLoopCounter < gCodeArray.get(i).size(); parseLoopCounter++) {
+				String curBlock = gCodeArray.get(i).get(parseLoopCounter);
 				Logger.debug("Current code block: {}", curBlock);
+
+				resetParseLoopCounter = true;
 
 				if (curBlock.startsWith("X"))
 					curX = Float.parseFloat(curBlock.substring(1)) * Shared.SEGMENT_SCALE_MULTIPLIER;
@@ -111,10 +120,24 @@ public class Interpreter {
 				} else if (curBlock.startsWith("S")) {
 					curSpindleSpeedText = curBlock.substring(1);
 				} else if (curBlock.startsWith("G") || curBlock.startsWith("M")) {
-					curCmd = curBlock;
+
+					// The block below is for differentiating mid-line commands
+					// example - G1 X1 Y1 G0 X2 Y2
+					if (parseLoopCounter == 0 || midLineCmdExists) {
+						midLineCmdExists = false;
+						curCmd = curBlock;
+					} else {
+						i--;
+						midLineCmdExists = true;
+						resetParseLoopCounter = false;
+						break;
+					}
 				}
 			}
-			
+
+			if (resetParseLoopCounter)
+				parseLoopCounter = 0;
+
 			if (curCmd.equals(""))
 				continue;
 
@@ -145,6 +168,11 @@ public class Interpreter {
 
 				// Divide by feed rate to find actual simulation speed
 				int numSegments = (int) ((distance * Shared.SEGMENT_GENERATION_MULTIPLIER) / curFeedRate);
+				if (numSegments == 0) {
+					Logger.warn("{} produces zero segments", curCmd);
+					continue;
+				}
+
 				float xSegmentLength = (float) ((curX - lastX) / numSegments);
 				float ySegmentLength = (float) ((curY - lastY) / numSegments);
 				float zSegmentLength = (float) ((curZ - lastZ) / numSegments);
@@ -205,12 +233,12 @@ public class Interpreter {
 			case "G2":
 			case "G3":
 				Logger.debug("Arc interpolation");
-				
+
 				// I and J values are ALWAYS relative
-				
+
 				lastI += lastX;
 				lastJ += lastY;
-				
+
 				Logger.debug("X{} Y{} Z{} I{} J{} FeedRate {}", curX, curY, curZ, lastI, lastJ, curFeedRateText);
 
 				// Find radius with distance formula
@@ -228,10 +256,16 @@ public class Interpreter {
 				if (curCmd.equals("G3")) {
 					totalTheta = 2 * Math.PI - totalTheta;
 				}
-				
+
 				double arcLength = totalTheta * radius;
 				double totalArcSegments = (int) (arcLength * Shared.SEGMENT_GENERATION_MULTIPLIER
 						* Shared.ARC_GENERATION_MULTIPLIER / curFeedRate);
+				if (totalArcSegments == 0) {
+					Logger.warn("{} produces zero segments", curCmd);
+					continue;
+				}
+					
+
 				double dTheta = totalTheta / (totalArcSegments - 1);
 
 				Logger.debug("Starting Angle: {} Ending Angle: {}", angleS, angleE);
@@ -244,7 +278,6 @@ public class Interpreter {
 					Logger.warn("Ramping detected");
 					rampFlag = true;
 				}
-					
 
 				Logger.debug("---------- BEGIN VERTEX ARRAY ----------");
 
