@@ -182,6 +182,12 @@ public class Parser {
 						cmdList.add(x);
 						continue;
 
+					} else if (Pattern.compile("[R]((\\d+\\.\\d+)|(\\d+)|(\\.\\d+))").matcher(x).matches()) {
+
+						// TODO need to implement canned drilling cycles
+						Logger.debug("Ignoring R value: {}", x);
+						continue;
+
 					}
 
 					if (Pattern.compile("[GMT]\\d+").matcher(x).matches()) {

@@ -30,6 +30,7 @@ public class Interpreter {
 	private float maxX;
 
 	private boolean rampFlag;
+	private boolean zeroSegmentFlag;
 
 	private int totalTicks;
 
@@ -58,6 +59,7 @@ public class Interpreter {
 		this.maxZ = 0f;
 
 		this.rampFlag = false;
+		this.zeroSegmentFlag = false;
 	}
 
 	public boolean generateAbsolute() {
@@ -168,8 +170,9 @@ public class Interpreter {
 
 				// Divide by feed rate to find actual simulation speed
 				int numSegments = (int) ((distance * Shared.SEGMENT_GENERATION_MULTIPLIER) / curFeedRate);
-				if (numSegments == 0) {
-					Logger.warn("{} produces zero segments", curCmd);
+				if (!zeroSegmentFlag && numSegments == 0) {
+					Logger.warn("Some code produces zero segments");
+					this.zeroSegmentFlag = true;
 					continue;
 				}
 
@@ -260,8 +263,9 @@ public class Interpreter {
 				double arcLength = totalTheta * radius;
 				double totalArcSegments = (int) (arcLength * Shared.SEGMENT_GENERATION_MULTIPLIER
 						* Shared.ARC_GENERATION_MULTIPLIER / curFeedRate);
-				if (totalArcSegments == 0) {
-					Logger.warn("{} produces zero segments", curCmd);
+				if (!zeroSegmentFlag && totalArcSegments == 0) {
+					Logger.warn("Some code produces zero segments");
+					this.zeroSegmentFlag = true;
 					continue;
 				}
 					

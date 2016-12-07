@@ -701,12 +701,12 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 			}
 		});
 		
-		MenuItem toggleNTagValidation = new MenuItem("Validate N Tag");
+		MenuItem toggleNTagValidation = new MenuItem("(Validate N Tag)");
 		toggleNTagValidation.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
 				Shared.VALIDATE_N_TAG = !Shared.VALIDATE_N_TAG;
-				toggleNTagValidation.setLabel((Shared.VALIDATE_N_TAG) ? "Ignore N Tag" : "Validate N Tag");
+				toggleNTagValidation.setLabel((Shared.VALIDATE_N_TAG) ? "(Ignore N Tag)" : "(Validate N Tag)");
 			}
 		});
 
@@ -1031,7 +1031,6 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		timePanel.add(timeSlider, BorderLayout.CENTER);
 
 		scaleSlider = new JSlider(JSlider.HORIZONTAL, 1, 2000, 1000);
-		scaleSlider.setEnabled(false);
 		scaleSlider.setUI(new CustomSliderUI(scaleSlider));
 		scaleSlider.setBackground(Shared.UI_COLOR);
 		scaleSlider.setPaintTicks(false);
@@ -1055,7 +1054,6 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		scalePanel.add(scaleSlider, BorderLayout.CENTER);
 
 		generationMultiplierSlider = new JSlider(JSlider.HORIZONTAL, 75, 2000, 150);
-		generationMultiplierSlider.setEnabled(false);
 		generationMultiplierSlider.setUI(new CustomSliderUI(generationMultiplierSlider));
 		generationMultiplierSlider.setBackground(Shared.UI_COLOR);
 		generationMultiplierSlider.setPaintTicks(false);
@@ -1187,12 +1185,6 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		isPlaying = false;
 		playButton.setText("Play");
 		timeSlider.setEnabled(true);
-	}
-
-	private void unlockScaleAndGenSliders() {
-		scaleSlider.setEnabled(true);
-		generationMultiplierSlider.setEnabled(true);
-		Logger.info("Unlocked sliders, reload after changing values");
 	}
 
 	private void switchScreenShotMode() {
@@ -1563,6 +1555,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 	}
 
 	@Override
+	@SuppressWarnings("unused")
 	public void keyPressed(KeyEvent e) {
 
 		Logger.debug("Key pressed: {}", e.getKeyChar());
@@ -1577,8 +1570,6 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 			resetCamera();
 		} else if (e.getKeyCode() == KeyEvent.VK_B) {
 			setCameraToIsometric();
-		} else if (e.getKeyCode() == KeyEvent.VK_L) {
-			unlockScaleAndGenSliders();
 		} else if (e.getKeyCode() == KeyEvent.VK_O) {
 			reloadDebug();
 		} else if (e.getKeyCode() == KeyEvent.VK_Q) {
