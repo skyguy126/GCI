@@ -1321,6 +1321,7 @@ public class RenderUI implements GLEventListener, MouseWheelListener, MouseMotio
 		gl.glClearColor(0f, 0f, 0f, 1f);
 		gl.setSwapInterval((Shared.VSYNC) ? 1 : 0);
 
+		setCameraToIsometric();
 		setCamera(gl, glu);
 
 		animator = new Animator(glcanvas);

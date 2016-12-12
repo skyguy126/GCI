@@ -28,11 +28,10 @@ public class Interpreter {
 	private float maxY;
 	private float minX;
 	private float maxX;
-
-	private boolean rampFlag;
-	private boolean zeroSegmentFlag;
-
+	
 	private int totalTicks;
+
+	private boolean zeroSegmentFlag;	
 
 	public Interpreter(ArrayList<ArrayList<String>> g) {
 		Logger.debug("Interpreter initiated");
@@ -58,7 +57,6 @@ public class Interpreter {
 		this.minZ = 0f;
 		this.maxZ = 0f;
 
-		this.rampFlag = false;
 		this.zeroSegmentFlag = false;
 	}
 
@@ -170,9 +168,8 @@ public class Interpreter {
 
 				// Divide by feed rate to find actual simulation speed
 				int numSegments = (int) ((distance * Shared.SEGMENT_GENERATION_MULTIPLIER) / curFeedRate);
-				if (!zeroSegmentFlag && numSegments == 0) {
-					Logger.warn("Some code produces zero segments");
-					this.zeroSegmentFlag = true;
+				if (numSegments == 0) {
+					displayZeroSegmentWarning();
 					continue;
 				}
 
@@ -263,9 +260,8 @@ public class Interpreter {
 				double arcLength = totalTheta * radius;
 				double totalArcSegments = (int) (arcLength * Shared.SEGMENT_GENERATION_MULTIPLIER
 						* Shared.ARC_GENERATION_MULTIPLIER / curFeedRate);
-				if (!zeroSegmentFlag && totalArcSegments == 0) {
-					Logger.warn("Some code produces zero segments");
-					this.zeroSegmentFlag = true;
+				if (totalArcSegments == 0) {
+					displayZeroSegmentWarning();
 					continue;
 				}
 					
@@ -277,12 +273,7 @@ public class Interpreter {
 				Logger.debug("Last I: {} last J: {}", lastI, lastJ);
 				Logger.debug("curX: {} curY: {}", curX, curY);
 				Logger.debug("Total theta: {}", totalTheta);
-
-				if (!rampFlag && curZ != lastZ) {
-					Logger.warn("Ramping detected");
-					rampFlag = true;
-				}
-
+				
 				Logger.debug("---------- BEGIN VERTEX ARRAY ----------");
 
 				for (int x = 0; x < totalArcSegments; x++) {
@@ -333,6 +324,13 @@ public class Interpreter {
 		Logger.debug("Vertex array size: {} TimeScale Size: {} Color size: {}", this.vertexValues.size(),
 				this.currentTimeScale.size(), this.currentLineColor.size());
 		return true;
+	}
+	
+	public void displayZeroSegmentWarning() {
+		if (!zeroSegmentFlag) {
+			Logger.warn("Some code produces zero segments");
+			this.zeroSegmentFlag = true;
+		}
 	}
 
 	private void processBounds(float x, float y, float z) {

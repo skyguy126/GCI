@@ -5,8 +5,9 @@
 --------
 
 ### Currently Planned Feature Set
-* Full 3D viewport (Free rotation, pan, and zoom)
-* Playback (view real-time animation with proper simulation speed)
+* Full 3D viewport (free rotation, pan, and zoom)
+* Playback (real-time animation)
+* Real-time display of current command, speed and feed rates
 * GCode syntax checking and detailed error reporting
 
 ### Screenshots
@@ -15,7 +16,7 @@
 
 ### Download
 
-Latest Version - **v0.7a**
+Latest Version - **v0.8a**
 
 *Download coming soon*
 
